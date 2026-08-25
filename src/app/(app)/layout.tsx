@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { FileSpreadsheet, LayoutList, Settings, ShieldBan, Mail } from 'lucide-react'
+import { FileSpreadsheet, LayoutList, Mail, Scale, ShieldBan, Sparkles } from 'lucide-react'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { signOut } from '@/app/actions/auth'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,8 @@ const NAV = [
   { href: '/contacts', label: 'Contacts', icon: FileSpreadsheet },
   { href: '/templates', label: 'Templates', icon: Mail },
   { href: '/suppressions', label: 'Suppressions', icon: ShieldBan },
-  { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/settings/ai', label: 'AI', icon: Sparkles },
+  { href: '/settings/compliance', label: 'Compliance', icon: Scale },
 ]
 
 export default async function AppLayout({ children }: LayoutProps<'/'>) {

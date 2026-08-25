@@ -92,6 +92,27 @@ export const profiles = pgTable('profiles', {
   email: text().notNull(),
   fullName: text(),
   avatarUrl: text(),
+
+  /**
+   * Physical postal address.
+   *
+   * CAN-SPAM requires a valid physical address in every commercial email, and
+   * 1:1 sales outreach is commercial. The send preflight blocks without it —
+   * this is a legal requirement, not a preference.
+   */
+  postalAddress: text(),
+
+  /**
+   * The soft opt-out sentence used by the 1:1 profile.
+   *
+   * A personal email gets a human sentence rather than a newsletter footer;
+   * the machine-readable opt-out rides in the List-Unsubscribe headers.
+   */
+  optOutLine: text(),
+
+  /** Display name on outgoing mail. Falls back to the Google account name. */
+  senderName: text(),
+
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 })

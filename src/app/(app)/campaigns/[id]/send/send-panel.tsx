@@ -35,6 +35,8 @@ interface Props {
     sendWindowDays: number[]
     threadFollowUps: boolean
   }
+  complianceProfile: 'one_to_one' | 'bulk'
+  footerPreview: string
   sampleSubject: string
   sampleBody: string
 }
@@ -53,6 +55,8 @@ export function SendPanel({
   sentLast24h,
   checks,
   settings,
+  complianceProfile,
+  footerPreview,
   sampleSubject,
   sampleBody,
 }: Props) {
@@ -239,6 +243,28 @@ export function SendPanel({
               </p>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Compliance footer · {complianceProfile === 'bulk' ? 'Bulk / marketing' : '1:1 outreach'}
+          </CardTitle>
+          <CardDescription>
+            Appended to every message at send time, below the body you reviewed. The unsubscribe
+            link is unique per recipient, which is why it is added here rather than baked in during
+            generation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <pre className="border-border bg-surface-muted text-ink rounded-lg border p-3 font-sans text-sm whitespace-pre-wrap">
+            {footerPreview || (
+              <span className="text-danger italic">
+                Nothing — set a postal address in Settings → Compliance
+              </span>
+            )}
+          </pre>
         </CardContent>
       </Card>
 

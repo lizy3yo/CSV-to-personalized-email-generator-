@@ -18,6 +18,10 @@ import { getAccessToken } from '@/lib/gmail/auth'
 import { describeSendError, sendMessage } from '@/lib/gmail/send'
 import { canSendNow } from '@/core/gmail/pacing'
 import { messageIdFor } from '@/core/gmail/message'
+import { appendFooter, checkCompliance } from '@/core/compliance/footer'
+import { unsubscribePageUrlFor, unsubscribeUrlFor } from '@/lib/compliance/unsubscribe'
+import { textToHtml } from '@/core/template/html'
+import { profiles, contactLists } from '@/db/schema'
 
 /**
  * The dispatcher.
@@ -213,17 +217,64 @@ export const handleCampaignDispatch = async (job: JobRow): Promise<void> => {
 
   const domain = account.googleEmail.split('@')[1] ?? 'localhost'
 
+  // Compliance is composed at SEND time, not at generation: the unsubscribe
+  // token is per-recipient, and a postal address corrected after generation
+  // must apply to everything still unsent.
+  const profile = await db.query.profiles.findFirst({ where: eq(profiles.id, campaign.userId) })
+  const list = campaign.listId
+    ? await db.query.contactLists.findFirst({ where: eq(contactLists.id, campaign.listId) })
+    : null
+
+  const oneClickUrl = unsubscribeUrlFor(recipient.id, contact.email)
+  const visibleUrl = unsubscribePageUrlFor(recipient.id, contact.email)
+
+  const footerInput = {
+    profile: campaign.complianceProfile,
+    unsubscribeUrl: campaign.complianceProfile === 'bulk' ? visibleUrl : oneClickUrl,
+    postalAddress: profile?.postalAddress,
+    optOutLine: profile?.optOutLine,
+    consentSource: list?.consentSource,
+  }
+
+  // Last line of defence. The preflight blocks a non-compliant campaign before
+  // it starts, but a postal address deleted mid-run must stop the send rather
+  // than quietly post non-compliant mail.
+  const blocking = checkCompliance(footerInput).filter((issue) => issue.blocking)
+  if (blocking.length > 0) {
+    await db
+      .update(campaignRecipients)
+      .set({ status: 'approved', error: blocking.map((i) => i.message).join(' ') })
+      .where(eq(campaignRecipients.id, recipient.id))
+
+    await db.update(campaigns).set({ status: 'paused' }).where(eq(campaigns.id, campaignId))
+    await db.insert(auditLog).values({
+      userId: campaign.userId,
+      action: 'campaign.paused_non_compliant',
+      entityType: 'campaign',
+      entityId: campaignId,
+      after: { issues: blocking.map((i) => i.code) },
+    })
+    return
+  }
+
+  const bodyText = appendFooter(recipient.bodyText ?? '', footerInput)
+
   try {
     const result = await sendMessage({
       userId: campaign.userId,
       googleAccountId: account.id,
       fromEmail: account.googleEmail,
+      fromName: profile?.senderName ?? undefined,
       to: contact.email,
       subject: recipient.subject ?? '',
-      text: recipient.bodyText ?? '',
-      html: recipient.bodyHtml ?? '',
+      text: bodyText,
+      // Regenerated from the footered text so the two halves of the multipart
+      // message cannot disagree about the unsubscribe link.
+      html: textToHtml(bodyText),
       // Deterministic, so a resend of this row carries the identical id.
       messageId: messageIdFor(recipient.idempotencyKey, domain),
+      // Gmail shows its native one-click control when both headers are present.
+      listUnsubscribe: { url: oneClickUrl },
       threadId: campaign.threadFollowUps ? (recipient.gmailThreadId ?? undefined) : undefined,
     })
 

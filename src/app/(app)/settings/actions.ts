@@ -4,7 +4,7 @@ import { and, eq, gte, sql } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { db } from '@/db'
-import { aiCredentials, aiUsage, auditLog } from '@/db/schema'
+import { aiCredentials, aiUsage, auditLog, profiles } from '@/db/schema'
 import { requireUserId } from '@/lib/auth/require-user'
 import { fingerprint, seal } from '@/lib/crypto'
 import { validateApiKey } from '@/lib/ai/client'
@@ -171,5 +171,61 @@ export async function getUsageSummary(): Promise<UsageSummary> {
     inputTokens: month?.input ?? 0,
     cacheReadTokens: month?.cacheRead ?? 0,
     outputTokens: month?.output ?? 0,
+  }
+}
+
+// ─── compliance ──────────────────────────────────────────────────────────────
+
+const complianceSchema = z.object({
+  senderName: z.string().trim().max(200).optional(),
+  /**
+   * Required to send. CAN-SPAM asks for a valid physical postal address in
+   * every commercial email, and 1:1 sales outreach is commercial — so this is
+   * a legal requirement rather than a preference, and the send preflight
+   * blocks without it.
+   */
+  postalAddress: z.string().trim().max(1000).optional(),
+  optOutLine: z.string().trim().max(500).optional(),
+})
+
+export async function updateComplianceSettings(
+  input: z.input<typeof complianceSchema>,
+): Promise<ActionResult> {
+  try {
+    const userId = await requireUserId()
+    const parsed = complianceSchema.parse(input)
+
+    await db
+      .update(profiles)
+      .set({
+        senderName: parsed.senderName || null,
+        postalAddress: parsed.postalAddress || null,
+        optOutLine: parsed.optOutLine || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(profiles.id, userId))
+
+    await db.insert(auditLog).values({
+      userId,
+      action: 'compliance.updated',
+      entityType: 'profile',
+      entityId: userId,
+      after: { hasPostalAddress: Boolean(parsed.postalAddress) },
+    })
+
+    revalidatePath('/settings/compliance')
+    return { ok: true, data: undefined }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function getComplianceSettings() {
+  const userId = await requireUserId()
+  const profile = await db.query.profiles.findFirst({ where: eq(profiles.id, userId) })
+  return {
+    senderName: profile?.senderName ?? '',
+    postalAddress: profile?.postalAddress ?? '',
+    optOutLine: profile?.optOutLine ?? '',
   }
 }

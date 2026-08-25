@@ -4,10 +4,11 @@ import { notFound } from 'next/navigation'
 import { and, asc, eq, sql } from 'drizzle-orm'
 import { ArrowLeft } from 'lucide-react'
 import { db } from '@/db'
-import { campaignRecipients, campaigns, contacts } from '@/db/schema'
+import { campaignRecipients, campaigns, contactLists, contacts, profiles } from '@/db/schema'
 import { requireUser } from '@/lib/auth/require-user'
 import { getSendReadiness, stuckSending } from '@/lib/jobs/send'
 import { hasSendScope } from '@/core/gmail/scopes'
+import { buildFooterText, checkCompliance } from '@/core/compliance/footer'
 import { SendPanel, type PreflightCheck } from './send-panel'
 
 export const metadata: Metadata = { title: 'Send' }
@@ -41,6 +42,23 @@ export default async function SendPage(props: PageProps<'/campaigns/[id]/send'>)
     .where(eq(campaignRecipients.campaignId, id))
     .orderBy(asc(contacts.rowNumber))
     .limit(1)
+
+  const profile = await db.query.profiles.findFirst({ where: eq(profiles.id, user.id) })
+  const list = campaign.listId
+    ? await db.query.contactLists.findFirst({ where: eq(contactLists.id, campaign.listId) })
+    : null
+
+  // Exactly the input the dispatcher will build, so the preflight cannot
+  // pass something the send path would then refuse.
+  const footerInput = {
+    profile: campaign.complianceProfile,
+    unsubscribeUrl: 'https://example.test/unsubscribe/preview',
+    postalAddress: profile?.postalAddress,
+    optOutLine: profile?.optOutLine,
+    consentSource: list?.consentSource,
+  }
+  const complianceIssues = checkCompliance(footerInput)
+  const footerPreview = buildFooterText(footerInput)
 
   const account = readiness.account
   const scopeOk = Boolean(account && hasSendScope(account.scopes))
@@ -104,12 +122,33 @@ export default async function SendPage(props: PageProps<'/campaigns/[id]/send'>)
       detail: 'Handled by Google for the account you send from',
     },
     {
-      ok: false,
+      ok: true,
       blocking: false,
       label: 'One-click unsubscribe',
       detail:
-        'List-Unsubscribe headers and the suppression footer arrive in phase 7. The message assembler already supports them; nothing is wired up yet.',
+        'List-Unsubscribe and List-Unsubscribe-Post headers are attached to every message, so Gmail shows its native unsubscribe control',
     },
+    ...complianceIssues.map((issue) => ({
+      ok: false,
+      blocking: issue.blocking,
+      label:
+        issue.code === 'no_postal_address'
+          ? 'Physical postal address'
+          : issue.code === 'no_unsubscribe_url'
+            ? 'Unsubscribe URL'
+            : 'Opt-out sentence',
+      detail: issue.message,
+    })),
+    ...(complianceIssues.length === 0
+      ? [
+          {
+            ok: true,
+            blocking: false,
+            label: 'Physical postal address',
+            detail: 'Present, and appended to every message',
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -146,6 +185,8 @@ export default async function SendPage(props: PageProps<'/campaigns/[id]/send'>)
               sendWindowDays: campaign.sendWindowDays,
               threadFollowUps: campaign.threadFollowUps,
             }}
+            complianceProfile={campaign.complianceProfile}
+            footerPreview={footerPreview}
             sampleSubject={sample?.subject ?? campaign.name}
             sampleBody={sample?.bodyText ?? 'No generated email to preview yet.'}
           />

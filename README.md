@@ -5,10 +5,10 @@ variables, optionally have Claude personalize each row individually, **review
 every generated email**, then send from your own Gmail — throttled, compliant
 and auditable.
 
-> **Status: Phase 6 of 9.** The whole path now exists: import contacts, write a
-> template, generate in the background, review and approve, then send from your
-> own Gmail — throttled, quota-aware and auditable. One-click unsubscribe and
-> the compliance footer arrive in phase 7.
+> **Status: Phase 7 of 9.** The full path is built and compliant: import
+> contacts, write a template, generate in the background, review and approve,
+> then send from your own Gmail — throttled, quota-aware, auditable, with
+> one-click unsubscribe and a preflight that blocks rather than warns.
 > The build plan is in [Roadmap](#roadmap).
 
 **Setup instructions → [SETUP.md](SETUP.md)**
@@ -147,9 +147,22 @@ problem clears the warning that reported it.
 
 **Two compliance profiles.** `one_to_one` sets `List-Unsubscribe` and
 `List-Unsubscribe-Post` headers plus a soft opt-out line — no newsletter
-footer on a personal email. `bulk` adds the full CAN-SPAM footer. Both enforce
-the suppression list **at dispatch time**, so someone who unsubscribes
-mid-campaign is still dropped.
+footer on a personal email, so the machine-readable opt-out is invisible to
+the reader while Gmail still shows its native unsubscribe control. `bulk` adds
+the full CAN-SPAM footer with a visible link. Both carry a physical postal
+address, because CAN-SPAM applies to any commercial email and 1:1 sales
+outreach is commercial — the preflight **blocks** without one rather than
+warning, and there is no override.
+
+Both enforce the suppression list **at dispatch time**, so someone who
+unsubscribes mid-campaign is still dropped.
+
+**The unsubscribe GET does not unsubscribe.** Corporate mail scanners and
+Gmail prefetch every link in a message, so a GET that changed state would
+unsubscribe people who never clicked. GET renders a confirmation page; the
+one-click POST (RFC 8058) is what the header points at. Tokens are HMAC-signed
+and self-verifying, so a link keeps working even after the campaign row is
+deleted, and there is no per-recipient lookup on a public endpoint.
 
 **No open tracking.** Gmail provides none natively, and a tracking pixel on 1:1
 outreach costs more in deliverability and trust than the data is worth. Reply
@@ -186,6 +199,7 @@ src/
     ai/                    models · cost · prompt · guardrails
     review/flags.ts        flag severity, and what blocks approval
     gmail/                 scopes · RFC 2822 assembly · pacing
+    compliance/footer.ts   the two profiles, and what blocks a send
     gmail/scopes.ts
   db/
     schema.ts              13 tables
@@ -194,6 +208,7 @@ src/
   lib/
     ai/client.ts           user's key, decrypted per call
     gmail/                 token refresh · users.messages.send
+    compliance/            HMAC unsubscribe tokens
     queue/                 FOR UPDATE SKIP LOCKED, backoff, lease reclaim
     jobs/                  handlers · render-and-flag · paced dispatcher
     crypto.ts              AES-256-GCM + unsubscribe HMAC
@@ -218,7 +233,7 @@ tests/                     Vitest
 | 4 | ✅ | Job queue, worker, Batch API generation |
 | 5 | ✅ | Review screen, flags, approval gate |
 | 6 | ✅ | Gmail send, idempotency, throttle, quota |
-| 7 | | Unsubscribe, suppression, preflight |
+| 7 | ✅ | Unsubscribe, suppression, preflight |
 | 8 | | Bounce detection (opt-in), reporting |
 | 9 | | Playwright E2E, docs, deploy |
 

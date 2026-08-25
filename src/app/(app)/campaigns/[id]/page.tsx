@@ -2,13 +2,16 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { and, asc, eq } from 'drizzle-orm'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ShieldCheck } from 'lucide-react'
 import { db } from '@/db'
 import { campaignRecipients, campaigns, contacts } from '@/db/schema'
 import { requireUser } from '@/lib/auth/require-user'
 import { Badge } from '@/components/ui/badge'
+import { buttonStyles } from '@/components/ui/button'
+import { parseFlags } from '@/core/review/flags'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getCampaignProgress } from '../actions'
+import { getSendableCount } from './review/actions'
 import { CampaignProgressPanel } from './campaign-progress'
 
 export const metadata: Metadata = { title: 'Campaign' }
@@ -24,6 +27,8 @@ export default async function CampaignPage(props: PageProps<'/campaigns/[id]'>) 
 
   const progress = await getCampaignProgress(id)
   if (!progress) notFound()
+
+  const sendable = await getSendableCount(id)
 
   // A sample of generated emails. The full review screen arrives in phase 5.
   const sample = await db
@@ -65,24 +70,41 @@ export default async function CampaignPage(props: PageProps<'/campaigns/[id]'>) 
 
           {sample.length > 0 && (
             <Card>
-              <CardHeader>
-                <CardTitle>Generated emails</CardTitle>
-                <p className="text-ink-muted text-sm">
-                  First {sample.length}. Nothing here can be sent — the review screen and its
-                  approval gate arrive in phase 5.
-                </p>
+              <CardHeader className="flex-row items-start justify-between gap-4">
+                <div>
+                  <CardTitle>Generated emails</CardTitle>
+                  <p className="text-ink-muted mt-1 text-sm">
+                    {sendable.toLocaleString()} of {progress.total.toLocaleString()} approved.
+                    Nothing can be sent until it is approved.
+                  </p>
+                </div>
+                <Link href={`/campaigns/${id}/review`} className={buttonStyles({ size: 'sm' })}>
+                  <ShieldCheck /> Review
+                </Link>
               </CardHeader>
               <CardContent className="divide-border flex flex-col divide-y p-0">
                 {sample.map((row) => (
                   <div key={row.id} className="flex flex-col gap-1.5 p-5">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-ink-muted text-sm">{row.email}</span>
-                      <Badge tone={row.status === 'flagged' ? 'warning' : 'success'}>
+                      <Badge
+                        tone={
+                          row.status === 'approved'
+                            ? 'success'
+                            : row.status === 'flagged'
+                              ? 'warning'
+                              : 'neutral'
+                        }
+                      >
                         {row.status}
                       </Badge>
-                      {row.flags.map((flag) => (
-                        <Badge key={flag} tone={flag.startsWith('error:') ? 'danger' : 'warning'}>
-                          {flag}
+                      {parseFlags(row.flags).map((flag) => (
+                        <Badge
+                          key={flag.raw}
+                          tone={flag.severity === 'error' ? 'danger' : 'warning'}
+                          title={flag.detail}
+                        >
+                          {flag.label}
                         </Badge>
                       ))}
                     </div>

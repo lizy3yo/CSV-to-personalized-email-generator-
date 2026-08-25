@@ -12,8 +12,10 @@ import postgres from 'postgres'
  * Template-only means no Anthropic key is required, so this exercises the
  * queue, the handlers and the render path on their own.
  *
- * Every tenth contact deliberately has no first name, so some rows come back
- * flagged rather than clean — a run where everything passes proves less.
+ * Every tenth contact deliberately has no first name, and the template omits a
+ * `default:` fallback, so those rows come back flagged as `unresolved`. A run
+ * where everything passes cleanly proves less, and the review screen needs
+ * something to actually review.
  *
  * Clean up with:  npm run db:seed-clean
  */
@@ -61,7 +63,7 @@ const [template] = await sql`
   INSERT INTO templates (user_id, name, subject_tpl, body_tpl, variables, ai_config, compliance_profile)
   VALUES (${userId}, 'Worker test template',
           'Quick question{{#if company}}, {{company}}{{/if}}',
-          ${'Hi {{ first_name | default: there }},\n\nWe work with teams like {{company}}.\n\nWorth a chat?\n\n— Sam'},
+          ${'Hi {{first_name}},\n\nWe work with teams like {{company}}.\n\nWorth a chat?\n\n— Sam'},
           ${sql.array(['first_name', 'company'])},
           ${sql.json({ enabled: false })}, 'one_to_one')
   RETURNING id

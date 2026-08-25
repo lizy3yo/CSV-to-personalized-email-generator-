@@ -5,10 +5,11 @@ variables, optionally have Claude personalize each row individually, **review
 every generated email**, then send from your own Gmail — throttled, compliant
 and auditable.
 
-> **Status: Phase 4 of 9.** CSV import, the template engine, AI slots with your
-> own key, and the durable job queue are done. You can import contacts, write a
-> template, create a campaign and generate every email in the background — and
-> nothing has been sent, because the send path does not exist until phase 6.
+> **Status: Phase 5 of 9.** CSV import, the template engine, AI slots with your
+> own key, the durable job queue, and the review screen with its approval gate
+> are done. Import contacts, write a template, generate every email in the
+> background, then review and approve them one by one or in bulk — and nothing
+> has been sent, because the send path does not exist until phase 6.
 > The build plan is in [Roadmap](#roadmap).
 
 **Setup instructions → [SETUP.md](SETUP.md)**
@@ -130,7 +131,20 @@ it finds the id on retry and goes straight to polling instead of submitting —
 and paying for — a second batch.
 
 **Nothing sends without human approval.** Generated emails land in `generated`
-or `flagged`, never `approved`. The send path only reads `approved` rows.
+or `flagged`, never `approved`. The dispatcher reads exactly one status —
+`approved` — so every other state is structurally unsendable rather than
+merely discouraged.
+
+Flags split into two kinds and the distinction is the whole design:
+**errors** (empty body, literal `{{ }}`) block approval, because no human
+judgement makes them sendable; **warnings** (an empty merge variable, a
+possible invention, an em-dash you asked to avoid) never block, because
+judging them in context is what the reviewer is for. Approving a mixed
+selection approves what it can and reports precisely what it refused.
+
+**Editing drops a row out of approved and recomputes its flags.** A decision
+made about one wording cannot carry over to different wording, and fixing a
+problem clears the warning that reported it.
 
 **Two compliance profiles.** `one_to_one` sets `List-Unsubscribe` and
 `List-Unsubscribe-Post` headers plus a soft opt-out line — no newsletter
@@ -160,6 +174,7 @@ src/
     csv/                   parse · detect · validate · dedupe · sanitize
     template/              parse · render · html · validate
     ai/                    models · cost · prompt · guardrails
+    review/flags.ts        flag severity, and what blocks approval
     gmail/scopes.ts
   db/
     schema.ts              13 tables
@@ -189,7 +204,7 @@ tests/                     Vitest
 | 2 | ✅ | Template engine, live preview (no AI needed) |
 | 3 | ✅ | AI slots, BYO key, guardrails, live cost meter |
 | 4 | ✅ | Job queue, worker, Batch API generation |
-| 5 | | Review screen, flags, approval gate |
+| 5 | ✅ | Review screen, flags, approval gate |
 | 6 | | Gmail send, idempotency, throttle, quota |
 | 7 | | Unsubscribe, suppression, preflight |
 | 8 | | Bounce detection (opt-in), reporting |

@@ -2,14 +2,19 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import type { ComponentProps } from 'react'
 import { cn } from '@/lib/utils'
 
-const button = cva(
+/**
+ * Exported so a `<Link>` can be styled as a button without wrapping an anchor
+ * in a `<button>` — that nesting is invalid HTML and breaks keyboard
+ * activation and middle-click-to-open-in-new-tab.
+ */
+export const buttonStyles = cva(
   'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors ' +
     'disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
         primary: 'bg-accent text-accent-fg hover:bg-accent-hover',
-        secondary: 'bg-surface-muted text-ink border border-border hover:border-border-strong',
+        secondary: 'bg-surface-muted text-ink border-border hover:border-border-strong border',
         ghost: 'text-ink-muted hover:bg-surface-muted hover:text-ink',
         danger: 'bg-danger text-white hover:opacity-90',
       },
@@ -23,8 +28,8 @@ const button = cva(
   },
 )
 
-export type ButtonProps = ComponentProps<'button'> & VariantProps<typeof button>
+export type ButtonProps = ComponentProps<'button'> & VariantProps<typeof buttonStyles>
 
 export function Button({ className, variant, size, ...props }: ButtonProps) {
-  return <button className={cn(button({ variant, size }), className)} {...props} />
+  return <button className={cn(buttonStyles({ variant, size }), className)} {...props} />
 }

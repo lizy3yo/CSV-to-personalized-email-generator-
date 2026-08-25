@@ -6,6 +6,9 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
     setupFiles: ['./tests/setup.ts'],
+    // Integration tests talk to a real database and must not run
+    // concurrently with each other — they share one synthetic user.
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

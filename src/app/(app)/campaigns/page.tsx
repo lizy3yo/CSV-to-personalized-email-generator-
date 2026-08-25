@@ -71,23 +71,24 @@ export default async function CampaignsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Build progress</CardTitle>
-              <CardDescription>Phase 0 of 9 complete.</CardDescription>
+              <CardDescription>Phase 1 of 9 complete.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              {PHASES.map((phase, i) => (
-                <div key={phase.n} className="flex items-baseline gap-3 text-sm">
-                  <span
-                    className={
-                      i === 0
-                        ? 'text-success w-14 shrink-0 font-mono text-xs'
-                        : 'text-ink-subtle w-14 shrink-0 font-mono text-xs'
-                    }
-                  >
-                    {i === 0 ? 'done' : `phase ${phase.n}`}
-                  </span>
-                  <span className={i === 0 ? 'text-ink' : 'text-ink-muted'}>{phase.label}</span>
-                </div>
-              ))}
+              {PHASES.map((phase) => {
+                const done = phase.n <= COMPLETED_PHASE
+                return (
+                  <div key={phase.n} className="flex items-baseline gap-3 text-sm">
+                    <span
+                      className={`w-14 shrink-0 font-mono text-xs ${
+                        done ? 'text-success' : 'text-ink-subtle'
+                      }`}
+                    >
+                      {done ? 'done' : `phase ${phase.n}`}
+                    </span>
+                    <span className={done ? 'text-ink' : 'text-ink-muted'}>{phase.label}</span>
+                  </div>
+                )
+              })}
             </CardContent>
           </Card>
         </div>
@@ -95,6 +96,8 @@ export default async function CampaignsPage() {
     </>
   )
 }
+
+const COMPLETED_PHASE = 1
 
 const PHASES = [
   { n: 0, label: 'Scaffold, database, Google auth, CI' },

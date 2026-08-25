@@ -11,3 +11,7 @@
 *.ico binary
 *.woff binary
 *.woff2 binary
+
+# CSV fixtures encode real-world byte-level quirks — CRLF line endings, a BOM,
+# embedded newlines. Normalising them would silently delete what they test.
+tests/fixtures/*.csv -text

@@ -1,0 +1,9 @@
+Email Address,First Name,Company,Last Touch,Notes,Internal ID
+a.chen@northwind.io,Ana,"Northwind Traders, Inc.",2026-07-14,"Asked about SSO pricing, and whether SCIM is on the roadmap.",88213
+B.PARK@Cascade.dev,Bo,Cascade,2026-06-02,"Trialled last quarter.
+Went quiet after the pilot.",88214
+a.chen@NORTHWIND.io,Ana,Northwind Traders,2026-07-20,Duplicate row,88215
+not-an-email,Kim,Vertex,2026-05-01,Bad address,88216
+,Lee,Delta,2026-04-11,Missing address,88217
+blocked@example.com,Max,Delta,2026-03-02,On the suppression list,88218
+rené.dupont@exãmple.fr,René,Éclair,2026-02-01,Unicode local part,88219

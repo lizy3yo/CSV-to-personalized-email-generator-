@@ -28,6 +28,14 @@ Read `README.md` for architecture and `SETUP.md` for local setup.
   `approved` recipients, and re-checks the suppression list at send time.
 - **`prepare: false`** on the runtime Postgres client — Supavisor transaction
   pooling cannot hold prepared statements. Migrations use `DIRECT_URL`.
+- **Every job handler must be safe to run twice.** Claim-time retry counting
+  and lease reclaim make "ran halfway, died, ran again" the normal case.
+- **Do not add `server-only`.** It throws in any plain Node process, and
+  `npm run worker` imports `src/lib/**` by design. The convention instead:
+  `src/core/**` is importable anywhere, `src/lib/**` is server-side only.
+- **Do not use `db.execute()` for queries whose rows you read by property.**
+  A raw execute returns snake_case columns, so `maxAttempts` comes back
+  `undefined`. Use the query builder's `.returning()`, which maps correctly.
 
 ## Next.js 16 specifics that bite
 

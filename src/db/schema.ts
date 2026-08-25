@@ -325,6 +325,15 @@ export const campaigns = pgTable(
     respectRecipientTimezone: boolean().notNull().default(false),
     threadFollowUps: boolean().notNull().default(true),
 
+    /**
+     * Anthropic Message Batch id for the generation run.
+     *
+     * Written immediately after the batch is submitted so a worker that dies
+     * between submitting and recording cannot submit — and pay for — the same
+     * batch twice. On retry, a set value means "skip submitting, go and poll".
+     */
+    generationBatchId: text(),
+
     scheduledAt: timestamp({ withTimezone: true }),
     startedAt: timestamp({ withTimezone: true }),
     completedAt: timestamp({ withTimezone: true }),

@@ -23,8 +23,11 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:reset": "supabase db reset --no-seed && npm run db:migrate",
     "db:studio": "node -e \"console.log(String.fromCharCode(10)+String.fromCharCode(9)+\\\"Supabase Studio -> http://localhost:54323\\\"+String.fromCharCode(10))\"",
-    "worker": "tsx watch src/worker/index.ts",
-    "keygen": "tsx scripts/keygen.ts"
+    "worker": "tsx src/worker/index.ts",
+    "keygen": "tsx scripts/keygen.ts",
+    "db:seed-demo": "tsx scripts/seed-demo.mts",
+    "worker:dev": "tsx watch src/worker/index.ts",
+    "db:seed-clean": "tsx scripts/seed-clean.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -39,7 +42,6 @@
     "postgres": "^3.4.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"
   },
@@ -63,7 +65,7 @@
     "typescript": "^5",
     "vitest": "^4.1.11"
   },
-  "description": "CSV to personalized email generator — Gmail, Supabase, BYO Anthropic key",
+  "description": "CSV to personalized email generator \u2014 Gmail, Supabase, BYO Anthropic key",
   "engines": {
     "node": ">=20.9.0"
   }

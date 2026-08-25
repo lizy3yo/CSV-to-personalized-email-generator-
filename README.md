@@ -5,10 +5,11 @@ variables, optionally have Claude personalize each row individually, **review
 every generated email**, then send from your own Gmail — throttled, compliant
 and auditable.
 
-> **Status: Phase 3 of 9.** Scaffold, database, auth, CI, CSV import, the
-> template engine with live preview, and AI slots with your own Anthropic key
-> are done. The app remains fully usable in template-only mode with no key.
-> The build plan is in [Roadmap](#roadmap); `/campaigns` shows live progress.
+> **Status: Phase 4 of 9.** CSV import, the template engine, AI slots with your
+> own key, and the durable job queue are done. You can import contacts, write a
+> template, create a campaign and generate every email in the background — and
+> nothing has been sent, because the send path does not exist until phase 6.
+> The build plan is in [Roadmap](#roadmap).
 
 **Setup instructions → [SETUP.md](SETUP.md)**
 
@@ -116,6 +117,18 @@ available in this codebase; the prompt builder takes no row data at all.
 to `ai_usage` and summed. The estimate shown before generation is labelled as
 one; the number under "Actual usage" is what you were billed.
 
+**Retries are counted at claim time, not on failure.** A job that kills its
+worker every time still exhausts its budget and lands in `dead` rather than
+looping forever. A worker that dies leaves its jobs `claimed`; once the lease
+lapses they return to `pending` and another worker — or the same one
+restarting — picks them up. That is what makes "close the laptop, reopen it,
+the campaign resumes" true rather than aspirational.
+
+**A batch is submitted at most once.** The Anthropic batch id is written to the
+campaign immediately after submission, so a worker that dies before recording
+it finds the id on retry and goes straight to polling instead of submitting —
+and paying for — a second batch.
+
 **Nothing sends without human approval.** Generated emails land in `generated`
 or `flagged`, never `approved`. The send path only reads `approved` rows.
 
@@ -153,10 +166,13 @@ src/
     index.ts               pooled runtime client (prepare: false)
     migrate.ts             direct-connection migrator
   lib/
-    ai/client.ts           server-only; user's key, decrypted per call
+    ai/client.ts           user's key, decrypted per call
+    queue/                 FOR UPDATE SKIP LOCKED, backoff, lease reclaim
+    jobs/                  handlers · render-and-flag
     crypto.ts              AES-256-GCM + unsubscribe HMAC
     supabase/              browser · server · proxy clients
     auth/                  Google credential ownership
+  worker/index.ts          the long-lived worker process
   proxy.ts                 session refresh + route gate (Next 16: was middleware.ts)
 drizzle/                   migrations — the single source of truth
 tests/                     Vitest
@@ -172,7 +188,7 @@ tests/                     Vitest
 | 1 | ✅ | CSV upload, column mapping, validation, dedupe |
 | 2 | ✅ | Template engine, live preview (no AI needed) |
 | 3 | ✅ | AI slots, BYO key, guardrails, live cost meter |
-| 4 | | Job queue, worker, Batch API generation |
+| 4 | ✅ | Job queue, worker, Batch API generation |
 | 5 | | Review screen, flags, approval gate |
 | 6 | | Gmail send, idempotency, throttle, quota |
 | 7 | | Unsubscribe, suppression, preflight |

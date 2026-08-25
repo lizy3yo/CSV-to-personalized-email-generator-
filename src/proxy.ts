@@ -14,7 +14,15 @@ import { clientEnv } from '@/env'
  *   2. Gate the authenticated area.
  */
 
-const PUBLIC_PATHS = ['/login', '/auth', '/unsubscribe', '/api/unsubscribe']
+/**
+ * Paths reachable without a session.
+ *
+ * `/api/cron` is here because an external cron service has no session cookie —
+ * gating it behind the auth redirect made the hosted-worker driver silently
+ * unreachable. It authenticates itself with CRON_SECRET instead, and refuses
+ * to run in production when that is unset.
+ */
+const PUBLIC_PATHS = ['/login', '/auth', '/unsubscribe', '/api/unsubscribe', '/api/cron']
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })

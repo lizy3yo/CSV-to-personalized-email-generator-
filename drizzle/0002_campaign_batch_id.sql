@@ -1,0 +1,1 @@
+ALTER TABLE "campaigns" ADD COLUMN "generation_batch_id" text;

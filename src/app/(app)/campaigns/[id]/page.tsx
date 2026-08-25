@@ -1,0 +1,102 @@
+import type { Metadata } from 'next'
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import { and, asc, eq } from 'drizzle-orm'
+import { ArrowLeft } from 'lucide-react'
+import { db } from '@/db'
+import { campaignRecipients, campaigns, contacts } from '@/db/schema'
+import { requireUser } from '@/lib/auth/require-user'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { getCampaignProgress } from '../actions'
+import { CampaignProgressPanel } from './campaign-progress'
+
+export const metadata: Metadata = { title: 'Campaign' }
+
+export default async function CampaignPage(props: PageProps<'/campaigns/[id]'>) {
+  const { id } = await props.params
+  const user = await requireUser()
+
+  const campaign = await db.query.campaigns.findFirst({
+    where: and(eq(campaigns.id, id), eq(campaigns.userId, user.id)),
+  })
+  if (!campaign) notFound()
+
+  const progress = await getCampaignProgress(id)
+  if (!progress) notFound()
+
+  // A sample of generated emails. The full review screen arrives in phase 5.
+  const sample = await db
+    .select({
+      id: campaignRecipients.id,
+      email: contacts.email,
+      subject: campaignRecipients.subject,
+      bodyText: campaignRecipients.bodyText,
+      status: campaignRecipients.status,
+      flags: campaignRecipients.flags,
+    })
+    .from(campaignRecipients)
+    .innerJoin(contacts, eq(contacts.id, campaignRecipients.contactId))
+    .where(eq(campaignRecipients.campaignId, id))
+    .orderBy(asc(contacts.rowNumber))
+    .limit(10)
+
+  return (
+    <>
+      <header className="border-border flex h-14 shrink-0 items-center gap-3 border-b px-6">
+        <Link
+          href="/campaigns"
+          className="text-ink-muted hover:text-ink flex items-center gap-1.5 text-sm transition-colors"
+        >
+          <ArrowLeft className="size-4" />
+          Campaigns
+        </Link>
+        <span className="text-ink-subtle">/</span>
+        <h1 className="truncate text-sm font-semibold tracking-tight">{campaign.name}</h1>
+      </header>
+
+      <main className="flex-1 p-6">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+          <Card>
+            <CardContent className="p-5">
+              <CampaignProgressPanel campaignId={id} progress={progress} />
+            </CardContent>
+          </Card>
+
+          {sample.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Generated emails</CardTitle>
+                <p className="text-ink-muted text-sm">
+                  First {sample.length}. Nothing here can be sent — the review screen and its
+                  approval gate arrive in phase 5.
+                </p>
+              </CardHeader>
+              <CardContent className="divide-border flex flex-col divide-y p-0">
+                {sample.map((row) => (
+                  <div key={row.id} className="flex flex-col gap-1.5 p-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-ink-muted text-sm">{row.email}</span>
+                      <Badge tone={row.status === 'flagged' ? 'warning' : 'success'}>
+                        {row.status}
+                      </Badge>
+                      {row.flags.map((flag) => (
+                        <Badge key={flag} tone={flag.startsWith('error:') ? 'danger' : 'warning'}>
+                          {flag}
+                        </Badge>
+                      ))}
+                    </div>
+                    <p className="text-sm font-medium">{row.subject}</p>
+                    <pre className="text-ink-muted font-sans text-sm whitespace-pre-wrap">
+                      {row.bodyText}
+                    </pre>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </main>
+    </>
+  )
+}

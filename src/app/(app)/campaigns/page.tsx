@@ -1,30 +1,49 @@
 import type { Metadata } from 'next'
-import { eq } from 'drizzle-orm'
-import { Check, Circle } from 'lucide-react'
+import Link from 'next/link'
+import { desc, eq, sql } from 'drizzle-orm'
+import { Check, Circle, LayoutList, Plus } from 'lucide-react'
 import { db } from '@/db'
-import { aiCredentials, googleAccounts } from '@/db/schema'
-import { getCurrentUser } from '@/lib/supabase/server'
+import { aiCredentials, campaignRecipients, campaigns, googleAccounts } from '@/db/schema'
+import { requireUser } from '@/lib/auth/require-user'
 import { hasSendScope } from '@/core/gmail/scopes'
+import { Badge } from '@/components/ui/badge'
+import { buttonStyles } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export const metadata: Metadata = { title: 'Campaigns' }
 
-/**
- * Phase 0 dashboard.
- *
- * There are no campaigns yet, so this shows what is actually wired up. It is
- * a real readiness check against the database, not placeholder copy — the
- * Gmail and AI rows here are the same checks the send preflight will use.
- */
-export default async function CampaignsPage() {
-  const user = await getCurrentUser()
+const STATUS_TONE: Record<string, 'neutral' | 'success' | 'warning' | 'accent' | 'danger'> = {
+  draft: 'neutral',
+  generating: 'accent',
+  reviewing: 'warning',
+  scheduled: 'accent',
+  sending: 'accent',
+  completed: 'success',
+  failed: 'danger',
+  cancelled: 'neutral',
+  paused: 'neutral',
+}
 
-  const [google, ai] = user
-    ? await Promise.all([
-        db.query.googleAccounts.findFirst({ where: eq(googleAccounts.userId, user.id) }),
-        db.query.aiCredentials.findFirst({ where: eq(aiCredentials.userId, user.id) }),
-      ])
-    : [undefined, undefined]
+export default async function CampaignsPage() {
+  const user = await requireUser()
+
+  const [rows, google, ai] = await Promise.all([
+    db
+      .select({
+        id: campaigns.id,
+        name: campaigns.name,
+        status: campaigns.status,
+        createdAt: campaigns.createdAt,
+        recipients: sql<number>`count(${campaignRecipients.id})::int`,
+      })
+      .from(campaigns)
+      .leftJoin(campaignRecipients, eq(campaignRecipients.campaignId, campaigns.id))
+      .where(eq(campaigns.userId, user.id))
+      .groupBy(campaigns.id)
+      .orderBy(desc(campaigns.createdAt)),
+    db.query.googleAccounts.findFirst({ where: eq(googleAccounts.userId, user.id) }),
+    db.query.aiCredentials.findFirst({ where: eq(aiCredentials.userId, user.id) }),
+  ])
 
   const gmailReady = Boolean(google && !google.revokedAt && hasSendScope(google.scopes))
 
@@ -32,10 +51,60 @@ export default async function CampaignsPage() {
     <>
       <header className="border-border flex h-14 shrink-0 items-center justify-between border-b px-6">
         <h1 className="text-sm font-semibold tracking-tight">Campaigns</h1>
+        <Link href="/campaigns/new" className={buttonStyles({ size: 'sm' })}>
+          <Plus /> New campaign
+        </Link>
       </header>
 
       <main className="flex-1 p-6">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+          {rows.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-3 p-12 text-center">
+                <LayoutList className="text-ink-subtle size-8" />
+                <div>
+                  <p className="text-sm font-medium">No campaigns yet</p>
+                  <p className="text-ink-muted mt-1 text-sm">
+                    A campaign pairs a contact list with a template, then generates one email per
+                    contact in the background.
+                  </p>
+                </div>
+                <Link href="/campaigns/new" className={buttonStyles({ className: 'mt-2' })}>
+                  <Plus /> New campaign
+                </Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {rows.map((campaign) => (
+                <Link key={campaign.id} href={`/campaigns/${campaign.id}`}>
+                  <Card className="hover:border-border-strong transition-colors">
+                    <CardContent className="flex items-center justify-between gap-4 p-5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{campaign.name}</p>
+                        <p className="text-ink-muted mt-0.5 text-sm">
+                          {new Date(campaign.createdAt).toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {campaign.recipients > 0 && (
+                          <Badge>{campaign.recipients.toLocaleString()} recipients</Badge>
+                        )}
+                        <Badge tone={STATUS_TONE[campaign.status] ?? 'neutral'}>
+                          {campaign.status}
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Setup</CardTitle>
@@ -45,14 +114,14 @@ export default async function CampaignsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="divide-border flex flex-col divide-y">
-              <StatusRow done label="Signed in" detail={user?.email ?? 'unknown account'} />
+              <StatusRow done label="Signed in" detail={user.email ?? 'unknown account'} />
               <StatusRow
                 done={gmailReady}
                 label="Gmail connected"
                 detail={
                   gmailReady
                     ? `${google?.googleEmail} · ${google?.dailyQuotaLimit}/day sending limit`
-                    : 'Sign out and back in to grant send permission'
+                    : 'Sign out and back in to grant send permission (used from phase 6)'
                 }
               />
               <StatusRow
@@ -65,30 +134,12 @@ export default async function CampaignsPage() {
                 }
                 optional
               />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Build progress</CardTitle>
-              <CardDescription>Phase 3 of 9 complete.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              {PHASES.map((phase) => {
-                const done = phase.n <= COMPLETED_PHASE
-                return (
-                  <div key={phase.n} className="flex items-baseline gap-3 text-sm">
-                    <span
-                      className={`w-14 shrink-0 font-mono text-xs ${
-                        done ? 'text-success' : 'text-ink-subtle'
-                      }`}
-                    >
-                      {done ? 'done' : `phase ${phase.n}`}
-                    </span>
-                    <span className={done ? 'text-ink' : 'text-ink-muted'}>{phase.label}</span>
-                  </div>
-                )
-              })}
+              <StatusRow
+                done={false}
+                label="Background worker"
+                detail="Run `npm run worker` in a second terminal to process generation"
+                optional
+              />
             </CardContent>
           </Card>
         </div>
@@ -96,21 +147,6 @@ export default async function CampaignsPage() {
     </>
   )
 }
-
-const COMPLETED_PHASE = 3
-
-const PHASES = [
-  { n: 0, label: 'Scaffold, database, Google auth, CI' },
-  { n: 1, label: 'CSV upload, column mapping, validation' },
-  { n: 2, label: 'Template engine and live preview' },
-  { n: 3, label: 'AI slots with your own Anthropic key' },
-  { n: 4, label: 'Job queue, worker, batch generation' },
-  { n: 5, label: 'Review screen and approval gate' },
-  { n: 6, label: 'Gmail send with throttling' },
-  { n: 7, label: 'Unsubscribe, suppression, preflight' },
-  { n: 8, label: 'Bounce detection and reporting' },
-  { n: 9, label: 'End-to-end tests and docs' },
-]
 
 function StatusRow({
   done,

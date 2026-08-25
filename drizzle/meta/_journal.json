@@ -15,6 +15,13 @@
       "when": 1787677040420,
       "tag": "0001_rls_and_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787681918726,
+      "tag": "0002_campaign_batch_id",
+      "breakpoints": true
     }
   ]
 }

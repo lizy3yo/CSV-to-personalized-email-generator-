@@ -1,4 +1,16 @@
-import 'server-only'
+/**
+ * NOT marked `server-only`.
+ *
+ * That package throws unless a bundler selects its react-server condition, so
+ * it breaks any plain Node process — including `npm run worker`, which imports
+ * this module by design. The guard it offers is real but incompatible with
+ * running the same code both inside Next.js and in a standalone worker.
+ *
+ * The convention that replaces it: `src/core/**` is safe to import anywhere,
+ * `src/lib/**` is server-side only. A client component that imports this would
+ * fail to bundle regardless, because it reaches the Postgres driver.
+ */
+
 import Anthropic from '@anthropic-ai/sdk'
 import { eq } from 'drizzle-orm'
 import { db } from '@/db'
@@ -107,6 +119,56 @@ export function describeError(error: unknown): string {
   return error instanceof Error ? error.message : 'Generation failed'
 }
 
+/**
+ * Build the Messages request for one slot.
+ *
+ * Shared by the synchronous path and the Batch API path deliberately: if the
+ * two built their requests separately they would drift, and a drifted system
+ * block is a different cache prefix — silently turning a 10% read into a full
+ * -price write on every row.
+ */
+export function buildSlotRequest(input: {
+  bodyTemplate: string
+  slot: SlotConfig
+  data: Record<string, string>
+  availableFields: string[]
+  tone?: string
+  guardrails?: GuardrailKey[]
+  model: ModelId | string
+  useCaching: boolean
+}) {
+  const system = buildSystemPrompt({
+    bodyTemplate: input.bodyTemplate,
+    slot: input.slot,
+    tone: input.tone,
+    guardrails: input.guardrails,
+    availableFields: input.availableFields,
+  })
+  const info = modelInfo(input.model)
+
+  return {
+    model: input.model,
+    max_tokens: 2000,
+    system: input.useCaching
+      ? // Byte-identical for every row — that is what makes it cacheable.
+        // Nothing row-specific may go in here.
+        [{ type: 'text' as const, text: system, cache_control: { type: 'ephemeral' as const } }]
+      : system,
+    messages: [{ role: 'user' as const, content: buildUserPrompt(input.data) }],
+    // `effort` is rejected by models that do not support it, and the user
+    // chooses the model. Low effort suits a short, tightly-briefed passage.
+    ...(info.supportsEffort ? { output_config: { effort: 'low' as const } } : {}),
+  }
+}
+
+/** Extract the text a model returned, ignoring any non-text blocks. */
+export function textOf(content: Anthropic.ContentBlock[]): string {
+  return content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+}
+
 export interface GenerateSlotInput {
   userId: string
   bodyTemplate: string
@@ -141,35 +203,21 @@ export interface GenerateSlotResult {
 export async function generateSlot(input: GenerateSlotInput): Promise<GenerateSlotResult> {
   const credentials = await loadCredentials(input.userId)
   const model = input.model ?? credentials.model
-  const info = modelInfo(model)
 
-  const system = buildSystemPrompt({
-    bodyTemplate: input.bodyTemplate,
-    slot: input.slot,
-    tone: input.tone,
-    guardrails: input.guardrails,
-    availableFields: input.availableFields,
-  })
+  const response = await credentials.client.messages.create(
+    buildSlotRequest({
+      bodyTemplate: input.bodyTemplate,
+      slot: input.slot,
+      data: input.data,
+      availableFields: input.availableFields,
+      tone: input.tone,
+      guardrails: input.guardrails,
+      model,
+      useCaching: credentials.useCaching,
+    }),
+  )
 
-  const response = await credentials.client.messages.create({
-    model,
-    max_tokens: 2000,
-    system: credentials.useCaching
-      ? // The system block is byte-identical for every row, which is what
-        // makes it worth caching. Nothing row-specific may go in here.
-        [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }]
-      : system,
-    messages: [{ role: 'user', content: buildUserPrompt(input.data) }],
-    // `effort` is rejected by models that do not support it, and the user
-    // chooses the model — so it is only sent where it is valid. Low effort
-    // suits a short, tightly-briefed passage.
-    ...(info.supportsEffort ? { output_config: { effort: 'low' as const } } : {}),
-  })
-
-  const raw = response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
+  const raw = textOf(response.content)
 
   const usage: Usage = {
     input_tokens: response.usage.input_tokens,

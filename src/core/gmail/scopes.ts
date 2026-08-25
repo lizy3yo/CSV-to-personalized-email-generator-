@@ -28,3 +28,19 @@ export const WORKSPACE_DAILY_LIMIT = 2000
 export function hasSendScope(scopes: readonly string[]): boolean {
   return scopes.includes(GMAIL_SEND_SCOPE)
 }
+
+export function hasReadScope(scopes: readonly string[]): boolean {
+  return scopes.includes(GMAIL_READONLY_SCOPE)
+}
+
+/**
+ * Scopes to request at sign-in.
+ *
+ * `gmail.readonly` is added only when the user has opted into bounce and reply
+ * detection — Gmail pushes neither, so the only way to see them is to read the
+ * mailbox. That is a far broader permission than sending, so it is never
+ * requested by default.
+ */
+export function scopeStringFor(includeRead: boolean): string {
+  return includeRead ? [...BASE_SCOPES, GMAIL_READONLY_SCOPE].join(' ') : DEFAULT_SCOPE_STRING
+}

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { storeGoogleCredentials } from '@/lib/auth/google-credentials'
-import { DEFAULT_SCOPE_STRING } from '@/core/gmail/scopes'
+import { scopeStringFor } from '@/core/gmail/scopes'
 
 /**
  * OAuth callback.
@@ -14,6 +14,10 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/campaigns'
+  // Set by the settings page when re-consenting for mailbox read access.
+  // Google grants what was asked for or the user declines outright, so the
+  // requested scope is what gets recorded.
+  const includeRead = searchParams.get('scopes') === 'read'
   const oauthError = searchParams.get('error')
 
   if (oauthError) {
@@ -47,7 +51,7 @@ export async function GET(request: NextRequest) {
         // Present only on a fresh grant. storeGoogleCredentials keeps any
         // existing token when this is null.
         refreshToken: session.provider_refresh_token ?? null,
-        scopes: DEFAULT_SCOPE_STRING.split(' '),
+        scopes: scopeStringFor(includeRead).split(' '),
       })
     } catch (cause) {
       // Sign-in itself succeeded. A failure to persist the Gmail credential

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { and, asc, eq } from 'drizzle-orm'
-import { ArrowLeft, Send, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, BarChart3, Send, ShieldCheck } from 'lucide-react'
 import { db } from '@/db'
 import { campaignRecipients, campaigns, contacts } from '@/db/schema'
 import { requireUser } from '@/lib/auth/require-user'
@@ -84,6 +84,12 @@ export default async function CampaignPage(props: PageProps<'/campaigns/[id]'>) 
                     className={buttonStyles({ size: 'sm', variant: 'secondary' })}
                   >
                     <ShieldCheck /> Review
+                  </Link>
+                  <Link
+                    href={`/campaigns/${id}/report`}
+                    className={buttonStyles({ size: 'sm', variant: 'secondary' })}
+                  >
+                    <BarChart3 /> Report
                   </Link>
                   <Link href={`/campaigns/${id}/send`} className={buttonStyles({ size: 'sm' })}>
                     <Send /> Send

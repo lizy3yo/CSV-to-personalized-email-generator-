@@ -29,6 +29,7 @@ import type { SlotConfig, Violation } from '@/core/ai/types'
 import { parse } from '@/core/template/parse'
 import { idempotencyKeyFor, renderAndSaveRecipient } from './render'
 import { handleCampaignDispatch } from './send'
+import { handleInboxPoll } from './inbox'
 
 /**
  * Job handlers.
@@ -492,4 +493,6 @@ export const HANDLERS: Record<string, JobHandler> = {
   'batch.poll': handleBatchPoll,
   // Sends one approved email, then reschedules itself at the pace interval.
   'campaign.dispatch': handleCampaignDispatch,
+  // Opt-in. Reads the mailbox for bounces and replies, then reschedules.
+  'inbox.poll': handleInboxPoll,
 }

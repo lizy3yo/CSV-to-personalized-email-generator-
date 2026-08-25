@@ -151,6 +151,17 @@ export const googleAccounts = pgTable(
     /** 500/day for consumer Gmail, 2000/day for Workspace. Rolling 24h window. */
     dailyQuotaLimit: integer().notNull().default(500),
 
+    /**
+     * Opt-in inbox polling.
+     *
+     * Gmail has no bounce webhook — a failed delivery arrives as a message in
+     * your own inbox. Detecting one therefore means reading the mailbox, which
+     * needs `gmail.readonly`: a far broader permission than sending. It is off
+     * by default and requires a deliberate re-consent.
+     */
+    inboxPollingEnabled: boolean().notNull().default(false),
+    lastInboxPollAt: timestamp({ withTimezone: true }),
+
     /** Set when Google reports the grant was revoked; forces a re-consent. */
     revokedAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

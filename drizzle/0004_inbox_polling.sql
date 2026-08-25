@@ -1,0 +1,2 @@
+ALTER TABLE "google_accounts" ADD COLUMN "inbox_polling_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "google_accounts" ADD COLUMN "last_inbox_poll_at" timestamp with time zone;

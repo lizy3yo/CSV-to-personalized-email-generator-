@@ -5,10 +5,10 @@ variables, optionally have Claude personalize each row individually, **review
 every generated email**, then send from your own Gmail — throttled, compliant
 and auditable.
 
-> **Status: Phase 7 of 9.** The full path is built and compliant: import
-> contacts, write a template, generate in the background, review and approve,
-> then send from your own Gmail — throttled, quota-aware, auditable, with
-> one-click unsubscribe and a preflight that blocks rather than warns.
+> **Status: Phase 8 of 9.** Feature-complete: import contacts, write a
+> template, generate in the background, review and approve, send from your own
+> Gmail — throttled, quota-aware, compliant — then see bounces, replies and
+> rates on the report. Only end-to-end tests and deployment docs remain.
 > The build plan is in [Roadmap](#roadmap).
 
 **Setup instructions → [SETUP.md](SETUP.md)**
@@ -168,6 +168,14 @@ deleted, and there is no per-recipient lookup on a public endpoint.
 outreach costs more in deliverability and trust than the data is worth. Reply
 rate is the metric.
 
+**Bounce detection is opt-in, and the trade-off is stated plainly.** Gmail
+pushes no bounce notification — a failed delivery arrives as a message from
+mailer-daemon in your own inbox — so detecting one means reading the mailbox
+with `gmail.readonly`, which grants far more than sending does. Off by default,
+behind a deliberate re-consent. Only a *confirmed hard* bounce suppresses an
+address; a soft one is recorded but never acted on, because suppressing over a
+full mailbox loses a real contact.
+
 **A timed-out send is never retried blindly.** Gmail's API has no idempotency
 parameter, so a request that fails mid-flight may or may not have delivered.
 Those rows stay in `sending` and are surfaced for a person to check against
@@ -200,6 +208,7 @@ src/
     review/flags.ts        flag severity, and what blocks approval
     gmail/                 scopes · RFC 2822 assembly · pacing
     compliance/footer.ts   the two profiles, and what blocks a send
+    gmail/bounce.ts        RFC 3464 parsing, hard vs soft, rate limits
     gmail/scopes.ts
   db/
     schema.ts              13 tables
@@ -207,10 +216,10 @@ src/
     migrate.ts             direct-connection migrator
   lib/
     ai/client.ts           user's key, decrypted per call
-    gmail/                 token refresh · users.messages.send
+    gmail/                 token refresh · users.messages.send · read
     compliance/            HMAC unsubscribe tokens
     queue/                 FOR UPDATE SKIP LOCKED, backoff, lease reclaim
-    jobs/                  handlers · render-and-flag · paced dispatcher
+    jobs/                  handlers · render-and-flag · dispatcher · inbox poll
     crypto.ts              AES-256-GCM + unsubscribe HMAC
     supabase/              browser · server · proxy clients
     auth/                  Google credential ownership
@@ -234,7 +243,7 @@ tests/                     Vitest
 | 5 | ✅ | Review screen, flags, approval gate |
 | 6 | ✅ | Gmail send, idempotency, throttle, quota |
 | 7 | ✅ | Unsubscribe, suppression, preflight |
-| 8 | | Bounce detection (opt-in), reporting |
+| 8 | ✅ | Bounce detection (opt-in), reporting |
 | 9 | | Playwright E2E, docs, deploy |
 
 ---

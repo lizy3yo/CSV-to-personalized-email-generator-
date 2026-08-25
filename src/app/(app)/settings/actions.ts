@@ -4,11 +4,13 @@ import { and, eq, gte, sql } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { db } from '@/db'
-import { aiCredentials, aiUsage, auditLog, profiles } from '@/db/schema'
+import { aiCredentials, aiUsage, auditLog, googleAccounts, profiles } from '@/db/schema'
 import { requireUserId } from '@/lib/auth/require-user'
 import { fingerprint, seal } from '@/lib/crypto'
 import { validateApiKey } from '@/lib/ai/client'
 import { MODEL_IDS } from '@/core/ai/models'
+import { hasReadScope } from '@/core/gmail/scopes'
+import { ensureInboxPolling } from '@/lib/jobs/inbox'
 
 /**
  * Settings for the bring-your-own-key AI layer.
@@ -227,5 +229,48 @@ export async function getComplianceSettings() {
     senderName: profile?.senderName ?? '',
     postalAddress: profile?.postalAddress ?? '',
     optOutLine: profile?.optOutLine ?? '',
+  }
+}
+
+/**
+ * Turn opt-in bounce and reply detection on or off.
+ *
+ * Enabling starts the standing poll job; disabling takes effect by that job
+ * declining to reschedule itself on its next run.
+ */
+export async function setInboxPolling(enabled: boolean): Promise<ActionResult> {
+  try {
+    const userId = await requireUserId()
+
+    const account = await db.query.googleAccounts.findFirst({
+      where: eq(googleAccounts.userId, userId),
+    })
+    if (!account) return { ok: false, error: 'No Gmail account is connected' }
+
+    if (enabled && !hasReadScope(account.scopes)) {
+      return {
+        ok: false,
+        error: 'Grant mailbox read access first — Gmail cannot report bounces any other way.',
+      }
+    }
+
+    await db
+      .update(googleAccounts)
+      .set({ inboxPollingEnabled: enabled, updatedAt: new Date() })
+      .where(eq(googleAccounts.id, account.id))
+
+    await ensureInboxPolling(userId, enabled)
+
+    await db.insert(auditLog).values({
+      userId,
+      action: enabled ? 'inbox_polling.enabled' : 'inbox_polling.disabled',
+      entityType: 'google_account',
+      entityId: account.id,
+    })
+
+    revalidatePath('/settings/compliance')
+    return { ok: true, data: undefined }
+  } catch (error) {
+    return fail(error)
   }
 }

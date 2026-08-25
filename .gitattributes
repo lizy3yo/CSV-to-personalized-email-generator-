@@ -1,0 +1,13 @@
+# Normalise to LF in the repository.
+# Without this, files authored on Windows land as CRLF and `prettier --check`
+# fails in Linux CI on a diff nobody made.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary

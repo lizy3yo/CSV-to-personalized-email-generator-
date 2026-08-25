@@ -1,0 +1,63 @@
+import { NextResponse, type NextRequest } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { storeGoogleCredentials } from '@/lib/auth/google-credentials'
+import { DEFAULT_SCOPE_STRING } from '@/core/gmail/scopes'
+
+/**
+ * OAuth callback.
+ *
+ * Exchanges the code for a session, then captures the Google refresh token —
+ * this is the only moment it is ever visible. Supabase does not store or
+ * refresh provider tokens for us.
+ */
+export async function GET(request: NextRequest) {
+  const { searchParams, origin } = request.nextUrl
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/campaigns'
+  const oauthError = searchParams.get('error')
+
+  if (oauthError) {
+    const description = searchParams.get('error_description') ?? oauthError
+    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(description)}`)
+  }
+
+  if (!code) {
+    return NextResponse.redirect(
+      `${origin}/login?error=${encodeURIComponent('No authorization code returned')}`,
+    )
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+
+  if (error || !data.session) {
+    return NextResponse.redirect(
+      `${origin}/login?error=${encodeURIComponent(error?.message ?? 'Sign-in failed')}`,
+    )
+  }
+
+  const { session } = data
+  const email = session.user.email
+
+  if (email) {
+    try {
+      await storeGoogleCredentials({
+        userId: session.user.id,
+        googleEmail: email,
+        // Present only on a fresh grant. storeGoogleCredentials keeps any
+        // existing token when this is null.
+        refreshToken: session.provider_refresh_token ?? null,
+        scopes: DEFAULT_SCOPE_STRING.split(' '),
+      })
+    } catch (cause) {
+      // Sign-in itself succeeded. A failure to persist the Gmail credential
+      // must not lock the user out — the app is fully usable without send
+      // capability, and Settings shows a "reconnect Gmail" prompt.
+      console.error('[auth/callback] failed to store Google credentials:', cause)
+    }
+  }
+
+  // Only relative paths, so a crafted `next` cannot bounce the user off-site.
+  const target = next.startsWith('/') ? next : '/campaigns'
+  return NextResponse.redirect(`${origin}${target}`)
+}

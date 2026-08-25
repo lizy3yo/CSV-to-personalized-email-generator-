@@ -1,0 +1,9 @@
+.next/
+node_modules/
+drizzle/
+supabase/.temp/
+supabase/.branches/
+coverage/
+next-env.d.ts
+package-lock.json
+*.md

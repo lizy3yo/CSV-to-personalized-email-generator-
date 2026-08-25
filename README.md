@@ -5,9 +5,10 @@ variables, optionally have Claude personalize each row individually, **review
 every generated email**, then send from your own Gmail — throttled, compliant
 and auditable.
 
-> **Status: Phase 1 of 9.** Scaffold, database, auth, CI, and the full CSV
-> import pipeline are done. The build plan is in [Roadmap](#roadmap);
-> `/campaigns` shows live progress.
+> **Status: Phase 2 of 9.** Scaffold, database, auth, CI, CSV import, and the
+> template engine with live preview are done — the app is already usable
+> end-to-end in template-only mode, with no AI key. The build plan is in
+> [Roadmap](#roadmap); `/campaigns` shows live progress.
 
 **Setup instructions → [SETUP.md](SETUP.md)**
 
@@ -95,6 +96,15 @@ model writes only the part that must vary. That is what makes output
 consistent, reviewable, and cheap — the surrounding prompt is byte-identical
 across every row, so prompt caching bills it at 10%.
 
+**Merge values are never re-parsed.** A CSV cell containing `{{ai:opening}}`
+renders as those literal characters. It cannot inject a slot, open a
+conditional, or reference another variable. Same rule in HTML: values are
+escaped before markup is added, so `Smith & Sons` and `<b>Acme</b>` are safe.
+
+**One source for text and HTML.** The template is authored as plain text and
+the HTML part is derived from it. Maintaining a second HTML template is how the
+plain-text alternative of a multipart message ends up stale or empty.
+
 **Nothing sends without human approval.** Generated emails land in `generated`
 or `flagged`, never `approved`. The send path only reads `approved` rows.
 
@@ -124,6 +134,7 @@ src/
     auth/callback/         OAuth callback — captures the refresh token
   core/                    pure logic, framework-free
     csv/                   parse · detect · validate · dedupe · sanitize
+    template/              parse · render · html · validate
     gmail/scopes.ts
   db/
     schema.ts              13 tables
@@ -146,7 +157,7 @@ tests/                     Vitest
 |---|---|---|
 | 0 | ✅ | Scaffold, database, Google auth, CI |
 | 1 | ✅ | CSV upload, column mapping, validation, dedupe |
-| 2 | | Template engine, live preview (no AI needed) |
+| 2 | ✅ | Template engine, live preview (no AI needed) |
 | 3 | | AI slots, BYO key, guardrails, live cost meter |
 | 4 | | Job queue, worker, Batch API generation |
 | 5 | | Review screen, flags, approval gate |

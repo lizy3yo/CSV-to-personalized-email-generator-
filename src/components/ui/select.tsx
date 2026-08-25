@@ -39,3 +39,17 @@ export function Input({ className, ...props }: ComponentProps<'input'>) {
 export function Label({ className, ...props }: ComponentProps<'label'>) {
   return <label className={cn('text-ink text-sm font-medium', className)} {...props} />
 }
+
+export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
+  return (
+    <textarea
+      className={cn(
+        'border-border bg-surface text-ink placeholder:text-ink-subtle w-full rounded-lg border px-3 py-2 text-sm',
+        'hover:border-border-strong resize-none font-mono leading-relaxed transition-colors',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        className,
+      )}
+      {...props}
+    />
+  )
+}

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { storeGoogleCredentials } from '@/lib/auth/google-credentials'
+import { syncGrantedScopes } from '@/lib/gmail/auth'
 import { scopeStringFor } from '@/core/gmail/scopes'
 
 /**
@@ -53,6 +54,11 @@ export async function GET(request: NextRequest) {
         refreshToken: session.provider_refresh_token ?? null,
         scopes: scopeStringFor(includeRead).split(' '),
       })
+
+      // Replace the requested scopes with the ones Google actually granted.
+      // Without this the app can believe it may send when it may not, and the
+      // discrepancy only appears as a 403 partway through a campaign.
+      await syncGrantedScopes(session.user.id)
     } catch (cause) {
       // Sign-in itself succeeded. A failure to persist the Gmail credential
       // must not lock the user out — the app is fully usable without send

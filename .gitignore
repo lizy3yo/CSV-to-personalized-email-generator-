@@ -49,3 +49,9 @@ supabase/.temp/
 supabase/.branches/
 *.local.sql
 /backups/
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/.playwright/

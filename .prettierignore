@@ -8,3 +8,5 @@ next-env.d.ts
 package-lock.json
 *.md
 tests/fixtures/
+test-results/
+playwright-report/

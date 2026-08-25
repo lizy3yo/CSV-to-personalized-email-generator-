@@ -15,7 +15,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
-    "db:start": "supabase start",
+    "db:start": "tsx scripts/supabase-start.mts",
     "db:stop": "supabase stop",
     "db:status": "supabase status",
     "db:generate": "drizzle-kit generate",
@@ -27,7 +27,12 @@
     "keygen": "tsx scripts/keygen.ts",
     "db:seed-demo": "tsx scripts/seed-demo.mts",
     "worker:dev": "tsx watch src/worker/index.ts",
-    "db:seed-clean": "tsx scripts/seed-clean.mts"
+    "db:seed-clean": "tsx scripts/seed-clean.mts",
+    "db:start:raw": "supabase start",
+    "doctor": "tsx scripts/doctor.mts",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -46,6 +51,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",

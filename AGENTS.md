@@ -47,8 +47,19 @@ Read `README.md` for architecture and `SETUP.md` for local setup.
   `npx next typegen`, not committed. Run it before `tsc` on a clean checkout.
 - Turbopack is the default for `dev` and `build`; no `--turbopack` flag.
 
+- **Record what Google granted, never what was requested.** Google silently
+  drops a scope it will not grant and still returns a valid token. Reading the
+  request makes the app believe it can send when it cannot.
+
 ## Before committing
 
 ```bash
-npm run check    # typecheck + lint + format + test
+npm run check    # typecheck + lint + format + unit and integration tests
+npm run e2e      # end-to-end, needs the local stack running
 ```
+
+E2E gotchas worth knowing:
+- `getByRole('alert')` also matches Next.js's route announcer. Use `appAlert()`.
+- The E2E server is a production build, so `/api/cron/worker` needs
+  `CRON_SECRET`; `runWorker()` sends it.
+- Tests share one database and run serially. Do not enable parallelism.

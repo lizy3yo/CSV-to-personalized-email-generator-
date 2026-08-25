@@ -101,6 +101,8 @@ export async function getAccessToken(
   const payload = (await response.json().catch(() => ({}))) as {
     access_token?: string
     expires_in?: number
+    /** Space-separated list of what was actually granted. */
+    scope?: string
     error?: string
     error_description?: string
   }
@@ -134,6 +136,14 @@ export async function getAccessToken(
       accessTokenIv: sealed.iv,
       accessTokenTag: sealed.tag,
       accessTokenExpiresAt: expiresAt,
+      // The scopes Google ACTUALLY granted, not the ones we asked for.
+      //
+      // Google silently drops a scope it will not grant — a restricted scope
+      // missing from the consent screen, or one the user declined — and still
+      // returns a perfectly valid token. Recording the request instead of the
+      // response makes the app believe it can send when it cannot, and the
+      // truth only surfaces as a 403 partway through a campaign.
+      ...(payload.scope ? { scopes: payload.scope.split(' ').filter(Boolean) } : {}),
       revokedAt: null,
       updatedAt: new Date(),
     })
@@ -174,4 +184,38 @@ function readCachedToken(account: AccountRow, userId: string): string | null {
     // row) is not fatal — mint a fresh one.
     return null
   }
+}
+
+/**
+ * Confirm what Google actually granted, and record it.
+ *
+ * Called right after sign-in. Forces a refresh so the token response reports
+ * the real scope list, which is the only trustworthy source — the request we
+ * made says nothing about what was approved.
+ *
+ * Returns the granted scopes, or null if a token could not be minted at all.
+ */
+export async function syncGrantedScopes(userId: string): Promise<string[] | null> {
+  const account = await db.query.googleAccounts.findFirst({
+    where: eq(googleAccounts.userId, userId),
+  })
+  if (!account) return null
+
+  // Clearing the cached access token forces a real refresh rather than a
+  // cache hit, which is what carries the scope list.
+  await db
+    .update(googleAccounts)
+    .set({ accessTokenExpiresAt: null })
+    .where(eq(googleAccounts.id, account.id))
+
+  try {
+    await getAccessToken(userId, account.id)
+  } catch {
+    return null
+  }
+
+  const updated = await db.query.googleAccounts.findFirst({
+    where: eq(googleAccounts.id, account.id),
+  })
+  return updated?.scopes ?? null
 }

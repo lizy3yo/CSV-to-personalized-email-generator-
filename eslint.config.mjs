@@ -22,7 +22,18 @@ const eslintConfig = defineConfig([
     'drizzle/**',
 
     'coverage/**',
+    'test-results/**',
+    'playwright-report/**',
   ]),
+
+  {
+    // Playwright fixtures take a callback parameter named `use`, which the
+    // React plugin mistakes for the `use()` hook. There is no React here.
+    files: ['e2e/**/*.ts', 'playwright.config.ts'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+    },
+  },
 ])
 
 export default eslintConfig

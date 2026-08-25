@@ -23,14 +23,33 @@ Nothing else. No Neon account, no Vercel account, no paid service.
 npm install
 ```
 
-## 2. Start the database
+## 2. Configure environment first
+
+Counter-intuitive, but it has to come before starting the database — see the
+warning in step 5.
+
+```bash
+cp .env.example .env.local
+npm run keygen    # run twice: once for ENCRYPTION_KEY, once for UNSUBSCRIBE_SECRET
+```
+
+Fill in `ENCRYPTION_KEY` and `UNSUBSCRIBE_SECRET` with the two generated
+values. They must be different.
+
+> `ENCRYPTION_KEY` encrypts the Google refresh token and the Anthropic API key
+> at rest. Changing it later invalidates every stored credential — you would
+> have to reconnect Gmail and re-paste the AI key. Back it up.
+
+Leave the Supabase and Google values for now; the next steps produce them.
+
+## 3. Start the database
 
 ```bash
 npm run db:start
 ```
 
 First run pulls several images — expect a few minutes. When it finishes it
-prints a block of URLs and keys. Keep it on screen; you need two values from it.
+prints a block of URLs and keys.
 
 | Service | URL |
 |---|---|
@@ -39,25 +58,7 @@ prints a block of URLs and keys. Keep it on screen; you need two values from it.
 | Postgres | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
 | Inbucket (catches test email) | http://localhost:54324 |
 
-## 3. Configure environment
-
-```bash
-cp .env.example .env.local
-```
-
-Then fill in:
-
-- `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` — from the
-  `npm run db:start` output above.
-- `ENCRYPTION_KEY` and `UNSUBSCRIBE_SECRET` — run `npm run keygen` once for
-  each. They must be different values.
-
-Leave the Google variables blank for now if you just want to see the app build
-and the database come up.
-
-> `ENCRYPTION_KEY` encrypts the Google refresh token and the Anthropic API key
-> at rest. Changing it later invalidates every stored credential — you would
-> have to reconnect Gmail and re-paste the AI key. Back it up.
+Copy the printed **anon key** into `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
 ## 4. Apply migrations
 
@@ -69,7 +70,7 @@ Open http://localhost:54323 and you should see 13 tables under `public`.
 
 ## 5. Google OAuth
 
-This is the fiddliest step. It is a one-time setup.
+The fiddliest step, and a one-time setup.
 
 **5.1 — Create a project**
 [console.cloud.google.com](https://console.cloud.google.com) → new project.
@@ -88,8 +89,8 @@ APIs & Services → OAuth consent screen.
 
 > Staying in Testing mode is deliberate. `gmail.send` is a restricted scope, so
 > a *published* app would need Google's OAuth verification review. Testing mode
-> allows up to 100 test users with no review at all — which is exactly right for
-> a single-user tool. *(Google reshuffles scope tiers occasionally; if the
+> allows up to 100 test users with no review at all — exactly right for a
+> single-user tool. *(Google reshuffles scope tiers occasionally; if the
 > console asks for verification, re-check the current classification in
 > Google's OAuth docs.)*
 
@@ -97,34 +98,49 @@ APIs & Services → OAuth consent screen.
 APIs & Services → Credentials → Create credentials → **OAuth client ID** →
 Application type **Web application**.
 
-Under **Authorized redirect URIs** add:
+Under **Authorized redirect URIs** add exactly this:
 
 ```
 http://127.0.0.1:54321/auth/v1/callback
 ```
 
-The redirect goes to *Supabase*, not to the Next.js app — Supabase handles the
-handshake and then forwards to `/auth/callback`. When you later deploy to
+The redirect goes to *Supabase*, not to the Next.js app — Supabase completes
+the handshake and then forwards to `/auth/callback`. When you later deploy to
 Supabase Cloud, add `https://<project-ref>.supabase.co/auth/v1/callback` too.
 
 Copy the client ID and secret into `.env.local`.
 
-**5.5 — Tell Supabase about it**
-
-Open `supabase/config.toml` and set:
-
-```toml
-[auth.external.google]
-enabled = true
-client_id = "env(GOOGLE_CLIENT_ID)"
-secret = "env(GOOGLE_CLIENT_SECRET)"
-```
-
-Then restart so it picks up the change:
+**5.5 — Restart the database**
 
 ```bash
 npm run db:stop && npm run db:start
 ```
+
+> **Why the restart matters.** `supabase/config.toml` refers to these secrets
+> as `env(GOOGLE_CLIENT_ID)`, and the Supabase CLI resolves that against the
+> **shell environment** when the containers start. It does not read `.env.local`,
+> and it does not read `.env` either.
+>
+> `npm run db:start` is a wrapper that loads `.env.local` and passes the values
+> through, which is the only reason this works. Running `supabase start`
+> directly hands the auth container the literal string `env(GOOGLE_CLIENT_ID)`
+> as its client id, and Google then rejects sign-in with an error that says
+> nothing about configuration. If you ever need the unwrapped command it is
+> `npm run db:start:raw` — but export the variables yourself first.
+
+The provider is already configured in `supabase/config.toml`; there is nothing
+to edit there.
+
+## 5.6 — Check everything
+
+```bash
+npm run doctor
+```
+
+Every line should be a `✓`. It checks the secrets are the right length, the
+database is reachable and migrated, the Google credentials are present, and —
+the reason it exists — that Supabase actually *received* those credentials
+rather than the literal `env(...)` placeholder.
 
 ## 6. Run
 
@@ -156,7 +172,9 @@ Rough cost with Claude Haiku 4.5, prompt caching and the Batch API:
 
 ```bash
 npm run dev            # app on :3000
-npm run db:start       # Supabase containers
+npm run doctor         # check the setup and say what is missing
+npm run worker         # background worker: generation and sending
+npm run db:start       # Supabase containers (loads .env.local first)
 npm run db:stop        # stop them
 npm run db:migrate     # apply pending migrations
 npm run db:generate    # generate a migration after editing src/db/schema.ts
@@ -167,6 +185,11 @@ npm run keygen         # print a new 32-byte base64 secret
 ---
 
 ## Troubleshooting
+
+**Google sign-in fails with an opaque error** — the credentials almost
+certainly never reached the container. Run `npm run doctor`, and if the Google
+line is a `✗`, restart with `npm run db:stop && npm run db:start` (the wrapper
+is what passes them through).
 
 **`supabase start` fails** — Docker Desktop is not running, or ports
 54321–54324 are taken. `docker ps` to check.

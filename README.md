@@ -5,13 +5,11 @@ variables, optionally have Claude personalize each row individually, **review
 every generated email**, then send from your own Gmail — throttled, compliant
 and auditable.
 
-> **Status: Phase 8 of 9.** Feature-complete: import contacts, write a
-> template, generate in the background, review and approve, send from your own
-> Gmail — throttled, quota-aware, compliant — then see bounces, replies and
-> rates on the report. Only end-to-end tests and deployment docs remain.
-> The build plan is in [Roadmap](#roadmap).
+> **Complete.** Import contacts, write a template, generate in the background,
+> review and approve, send from your own Gmail — throttled, quota-aware,
+> compliant — then see bounces, replies and rates on the report.
 
-**Setup instructions → [SETUP.md](SETUP.md)**
+**Setup → [SETUP.md](SETUP.md) · Deployment → [DEPLOY.md](DEPLOY.md)**
 
 ---
 
@@ -244,7 +242,7 @@ tests/                     Vitest
 | 6 | ✅ | Gmail send, idempotency, throttle, quota |
 | 7 | ✅ | Unsubscribe, suppression, preflight |
 | 8 | ✅ | Bounce detection (opt-in), reporting |
-| 9 | | Playwright E2E, docs, deploy |
+| 9 | ✅ | Playwright E2E, docs, deploy |
 
 ---
 
@@ -262,11 +260,33 @@ tests/                     Vitest
 
 ---
 
-## Contributing
+## Testing
 
 ```bash
-npm run check    # typecheck + lint + format + test
+npm run check    # typecheck + lint + format + 422 unit and integration tests
+npm run e2e      # 25 end-to-end tests through a real browser
+npm run doctor   # check the environment and say what is missing
 ```
 
-CI runs the same checks plus a migration-drift guard that fails if
+Three layers, each doing something the others cannot:
+
+**Unit** — the pure logic in `src/core/`. CSV classification, template
+rendering, cost accounting, guardrails, RFC 2822 assembly, pacing arithmetic,
+bounce parsing. Fast, exhaustive, no I/O.
+
+**Integration** — against a real Postgres, because some guarantees are the
+database's and asserting them in TypeScript would prove nothing:
+`FOR UPDATE SKIP LOCKED` really does partition work between workers, the unique
+index really does block a duplicate, a delete really does cascade, and a
+dispatcher query really does return only `approved` rows.
+
+**End-to-end** — a real browser against a production build. This is the only
+layer where browser-side CSV parsing, the server actions and the queue meet.
+Sign-in is minted directly against Supabase rather than driving Google's
+consent screen; everything below that is real.
+
+Nothing in any layer sends email. The furthest the send tests go is asserting
+that the button is disabled and saying why.
+
+CI runs all three, plus a migration-drift guard that fails if
 `src/db/schema.ts` changed without a generated migration.

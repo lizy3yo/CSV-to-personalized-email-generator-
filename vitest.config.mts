@@ -5,6 +5,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
+    // e2e/ is Playwright's; its `test` import is a different runner.
+    exclude: ['e2e/**', 'node_modules/**'],
     setupFiles: ['./tests/setup.ts'],
     // Integration tests talk to a real database and must not run
     // concurrently with each other — they share one synthetic user.

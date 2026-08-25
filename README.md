@@ -5,11 +5,10 @@ variables, optionally have Claude personalize each row individually, **review
 every generated email**, then send from your own Gmail — throttled, compliant
 and auditable.
 
-> **Status: Phase 5 of 9.** CSV import, the template engine, AI slots with your
-> own key, the durable job queue, and the review screen with its approval gate
-> are done. Import contacts, write a template, generate every email in the
-> background, then review and approve them one by one or in bulk — and nothing
-> has been sent, because the send path does not exist until phase 6.
+> **Status: Phase 6 of 9.** The whole path now exists: import contacts, write a
+> template, generate in the background, review and approve, then send from your
+> own Gmail — throttled, quota-aware and auditable. One-click unsubscribe and
+> the compliance footer arrive in phase 7.
 > The build plan is in [Roadmap](#roadmap).
 
 **Setup instructions → [SETUP.md](SETUP.md)**
@@ -156,6 +155,17 @@ mid-campaign is still dropped.
 outreach costs more in deliverability and trust than the data is worth. Reply
 rate is the metric.
 
+**A timed-out send is never retried blindly.** Gmail's API has no idempotency
+parameter, so a request that fails mid-flight may or may not have delivered.
+Those rows stay in `sending` and are surfaced for a person to check against
+their Sent folder — a duplicate is worse than a gap. Only errors that
+*definitely* mean non-delivery (429, 5xx, network) return a row to `approved`.
+
+**Every header value is stripped of CR and LF.** A contact called
+`Ana
+Bcc: everyone@corp.com` would otherwise silently add a recipient.
+There is no way to opt out of that sanitisation.
+
 **Credentials are encrypted with AES-256-GCM**, bound to the owning user via
 AAD — a credential row copied onto another user fails to decrypt rather than
 leaking a working token. See [`src/lib/crypto.ts`](src/lib/crypto.ts).
@@ -175,6 +185,7 @@ src/
     template/              parse · render · html · validate
     ai/                    models · cost · prompt · guardrails
     review/flags.ts        flag severity, and what blocks approval
+    gmail/                 scopes · RFC 2822 assembly · pacing
     gmail/scopes.ts
   db/
     schema.ts              13 tables
@@ -182,8 +193,9 @@ src/
     migrate.ts             direct-connection migrator
   lib/
     ai/client.ts           user's key, decrypted per call
+    gmail/                 token refresh · users.messages.send
     queue/                 FOR UPDATE SKIP LOCKED, backoff, lease reclaim
-    jobs/                  handlers · render-and-flag
+    jobs/                  handlers · render-and-flag · paced dispatcher
     crypto.ts              AES-256-GCM + unsubscribe HMAC
     supabase/              browser · server · proxy clients
     auth/                  Google credential ownership
@@ -205,7 +217,7 @@ tests/                     Vitest
 | 3 | ✅ | AI slots, BYO key, guardrails, live cost meter |
 | 4 | ✅ | Job queue, worker, Batch API generation |
 | 5 | ✅ | Review screen, flags, approval gate |
-| 6 | | Gmail send, idempotency, throttle, quota |
+| 6 | ✅ | Gmail send, idempotency, throttle, quota |
 | 7 | | Unsubscribe, suppression, preflight |
 | 8 | | Bounce detection (opt-in), reporting |
 | 9 | | Playwright E2E, docs, deploy |

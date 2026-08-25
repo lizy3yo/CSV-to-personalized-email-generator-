@@ -28,6 +28,7 @@ import type { GuardrailKey } from '@/core/ai/prompt'
 import type { SlotConfig, Violation } from '@/core/ai/types'
 import { parse } from '@/core/template/parse'
 import { idempotencyKeyFor, renderAndSaveRecipient } from './render'
+import { handleCampaignDispatch } from './send'
 
 /**
  * Job handlers.
@@ -489,4 +490,6 @@ export const HANDLERS: Record<string, JobHandler> = {
   'recipient.generate': handleRecipientGenerate,
   'batch.submit': handleBatchSubmit,
   'batch.poll': handleBatchPoll,
+  // Sends one approved email, then reschedules itself at the pace interval.
+  'campaign.dispatch': handleCampaignDispatch,
 }

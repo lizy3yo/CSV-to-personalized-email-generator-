@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { and, asc, eq } from 'drizzle-orm'
-import { ArrowLeft, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Send, ShieldCheck } from 'lucide-react'
 import { db } from '@/db'
 import { campaignRecipients, campaigns, contacts } from '@/db/schema'
 import { requireUser } from '@/lib/auth/require-user'
@@ -78,9 +78,17 @@ export default async function CampaignPage(props: PageProps<'/campaigns/[id]'>) 
                     Nothing can be sent until it is approved.
                   </p>
                 </div>
-                <Link href={`/campaigns/${id}/review`} className={buttonStyles({ size: 'sm' })}>
-                  <ShieldCheck /> Review
-                </Link>
+                <div className="flex shrink-0 gap-2">
+                  <Link
+                    href={`/campaigns/${id}/review`}
+                    className={buttonStyles({ size: 'sm', variant: 'secondary' })}
+                  >
+                    <ShieldCheck /> Review
+                  </Link>
+                  <Link href={`/campaigns/${id}/send`} className={buttonStyles({ size: 'sm' })}>
+                    <Send /> Send
+                  </Link>
+                </div>
               </CardHeader>
               <CardContent className="divide-border flex flex-col divide-y p-0">
                 {sample.map((row) => (

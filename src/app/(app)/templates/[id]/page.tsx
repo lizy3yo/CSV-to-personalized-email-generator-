@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { ArrowLeft } from 'lucide-react'
 import { db } from '@/db'
-import { contactLists, contacts, templates } from '@/db/schema'
+import { aiCredentials, contactLists, contacts, templates } from '@/db/schema'
 import { requireUser } from '@/lib/auth/require-user'
 import { TemplateEditor } from '../template-editor'
 
@@ -32,6 +32,12 @@ export default async function EditTemplatePage(props: PageProps<'/templates/[id]
     .groupBy(contactLists.id)
     .orderBy(desc(contactLists.createdAt))
 
+  // Drives whether the editor offers the generate button or points at
+  // Settings. The key itself never leaves the server.
+  const credential = await db.query.aiCredentials.findFirst({
+    where: eq(aiCredentials.userId, user.id),
+  })
+
   return (
     <>
       <header className="border-border flex h-14 shrink-0 items-center gap-3 border-b px-6">
@@ -47,6 +53,7 @@ export default async function EditTemplatePage(props: PageProps<'/templates/[id]
       </header>
 
       <TemplateEditor
+        hasApiKey={Boolean(credential)}
         templateId={template.id}
         lists={lists}
         initial={{

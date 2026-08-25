@@ -5,10 +5,10 @@ variables, optionally have Claude personalize each row individually, **review
 every generated email**, then send from your own Gmail — throttled, compliant
 and auditable.
 
-> **Status: Phase 2 of 9.** Scaffold, database, auth, CI, CSV import, and the
-> template engine with live preview are done — the app is already usable
-> end-to-end in template-only mode, with no AI key. The build plan is in
-> [Roadmap](#roadmap); `/campaigns` shows live progress.
+> **Status: Phase 3 of 9.** Scaffold, database, auth, CI, CSV import, the
+> template engine with live preview, and AI slots with your own Anthropic key
+> are done. The app remains fully usable in template-only mode with no key.
+> The build plan is in [Roadmap](#roadmap); `/campaigns` shows live progress.
 
 **Setup instructions → [SETUP.md](SETUP.md)**
 
@@ -105,6 +105,17 @@ escaped before markup is added, so `Smith & Sons` and `<b>Acme</b>` are safe.
 the HTML part is derived from it. Maintaining a second HTML template is how the
 plain-text alternative of a multipart message ends up stale or empty.
 
+**The cached prefix is the cost model.** The system prompt — task, template,
+brief, guardrails — is byte-identical for every recipient, so it is cached once
+and billed at a tenth of the input rate thereafter. Only the recipient's own
+fields vary. Letting anything row-specific reach the system prompt would
+invalidate the cache on every call, which is the most expensive mistake
+available in this codebase; the prompt builder takes no row data at all.
+
+**Spend is measured, not estimated.** Every response's `usage` block is written
+to `ai_usage` and summed. The estimate shown before generation is labelled as
+one; the number under "Actual usage" is what you were billed.
+
 **Nothing sends without human approval.** Generated emails land in `generated`
 or `flagged`, never `approved`. The send path only reads `approved` rows.
 
@@ -135,12 +146,14 @@ src/
   core/                    pure logic, framework-free
     csv/                   parse · detect · validate · dedupe · sanitize
     template/              parse · render · html · validate
+    ai/                    models · cost · prompt · guardrails
     gmail/scopes.ts
   db/
     schema.ts              13 tables
     index.ts               pooled runtime client (prepare: false)
     migrate.ts             direct-connection migrator
   lib/
+    ai/client.ts           server-only; user's key, decrypted per call
     crypto.ts              AES-256-GCM + unsubscribe HMAC
     supabase/              browser · server · proxy clients
     auth/                  Google credential ownership
@@ -158,7 +171,7 @@ tests/                     Vitest
 | 0 | ✅ | Scaffold, database, Google auth, CI |
 | 1 | ✅ | CSV upload, column mapping, validation, dedupe |
 | 2 | ✅ | Template engine, live preview (no AI needed) |
-| 3 | | AI slots, BYO key, guardrails, live cost meter |
+| 3 | ✅ | AI slots, BYO key, guardrails, live cost meter |
 | 4 | | Job queue, worker, Batch API generation |
 | 5 | | Review screen, flags, approval gate |
 | 6 | | Gmail send, idempotency, throttle, quota |

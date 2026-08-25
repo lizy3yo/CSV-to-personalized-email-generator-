@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useRef, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
@@ -20,7 +21,15 @@ import { Input, Label, Select, Textarea } from '@/components/ui/select'
 import { textToHtml } from '@/core/template/html'
 import { render, renderSubject } from '@/core/template/render'
 import { checkTemplate } from '@/core/template/validate'
-import { createTemplate, getPreviewRows, updateTemplate } from './actions'
+import { formatUsd } from '@/core/ai/cost'
+import { GUARDRAIL_LABELS, type GuardrailKey } from '@/core/ai/prompt'
+import {
+  createTemplate,
+  generateSlotPreview,
+  getPreviewRows,
+  updateTemplate,
+  type GeneratePreviewResult,
+} from './actions'
 
 interface ListOption {
   id: string
@@ -29,6 +38,7 @@ interface ListOption {
 }
 
 interface Props {
+  hasApiKey: boolean
   templateId?: string
   initial: {
     name: string
@@ -54,7 +64,7 @@ const SAMPLE_ROW: PreviewRow = {
 }
 const SAMPLE_VARIABLES = Object.keys(SAMPLE_ROW.data)
 
-export function TemplateEditor({ templateId, initial, lists }: Props) {
+export function TemplateEditor({ hasApiKey, templateId, initial, lists }: Props) {
   const router = useRouter()
   const bodyRef = useRef<HTMLTextAreaElement>(null)
 
@@ -73,6 +83,18 @@ export function TemplateEditor({ templateId, initial, lists }: Props) {
   } | null>(null)
   const [rowIndex, setRowIndex] = useState(0)
   const [loadingRows, setLoadingRows] = useState(false)
+
+  // AI slot configuration. Persisted with the template in phase 4; for now
+  // it drives the try-it-on-this-row button.
+  const [brief, setBrief] = useState(
+    'Reference something specific from their data in one sentence.',
+  )
+  const [tone, setTone] = useState('Warm but professional. Plain words, no hype.')
+  const [maxSentences, setMaxSentences] = useState(2)
+  const [guardrails, setGuardrails] = useState<GuardrailKey[]>(['no_superlatives'])
+  const [slotFills, setSlotFills] = useState<Record<string, GeneratePreviewResult>>({})
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
 
   const [view, setView] = useState<'text' | 'html'>('text')
   const [saving, startSaving] = useTransition()
@@ -117,7 +139,10 @@ export function TemplateEditor({ templateId, initial, lists }: Props) {
   )
 
   const preview = useMemo(() => {
-    const context = { data: current.data }
+    const slots = Object.fromEntries(
+      Object.entries(slotFills).map(([name, fill]) => [name, fill.text]),
+    )
+    const context = { data: current.data, slots }
     const subject = renderSubject(subjectTpl, context)
     const body = render(bodyTpl, context)
     return {
@@ -127,7 +152,7 @@ export function TemplateEditor({ templateId, initial, lists }: Props) {
       unresolved: [...new Set([...subject.unresolved, ...body.unresolved])],
       slots: [...new Set([...subject.unfilledSlots, ...body.unfilledSlots])],
     }
-  }, [subjectTpl, bodyTpl, current])
+  }, [subjectTpl, bodyTpl, current, slotFills])
 
   /** Insert at the caret rather than appending — appending is never what you want. */
   function insert(snippet: string) {
@@ -143,6 +168,40 @@ export function TemplateEditor({ templateId, initial, lists }: Props) {
       el.focus()
       el.setSelectionRange(start + snippet.length, start + snippet.length)
     })
+  }
+
+  /**
+   * Fill every AI slot for the row currently shown.
+   *
+   * Runs synchronously because a person is watching. Bulk generation goes
+   * through the queue and the Batch API in phase 4.
+   */
+  async function generate() {
+    setGenError(null)
+    setGenerating(true)
+    try {
+      const fills: Record<string, GeneratePreviewResult> = {}
+      for (const slotName of check.slots) {
+        const result = await generateSlotPreview({
+          bodyTemplate: bodyTpl,
+          slotName,
+          brief,
+          maxSentences: maxSentences || undefined,
+          tone,
+          guardrails,
+          data: current.data,
+          availableFields: variables,
+        })
+        if (!result.ok) {
+          setGenError(result.error)
+          return
+        }
+        fills[slotName] = result.data
+      }
+      setSlotFills(fills)
+    } finally {
+      setGenerating(false)
+    }
   }
 
   function save() {
@@ -272,6 +331,85 @@ export function TemplateEditor({ templateId, initial, lists }: Props) {
               </button>
             </CardContent>
           </Card>
+
+          {check.slots.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-1.5 text-sm">
+                  <Sparkles className="size-4" />
+                  AI slot: {check.slots.join(', ')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="brief">What should the model write?</Label>
+                  <Textarea
+                    id="brief"
+                    value={brief}
+                    onChange={(e) => setBrief(e.target.value)}
+                    rows={2}
+                    className="min-h-0 font-sans"
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <div className="flex min-w-40 flex-1 flex-col gap-1.5">
+                    <Label htmlFor="tone">Tone</Label>
+                    <Input id="tone" value={tone} onChange={(e) => setTone(e.target.value)} />
+                  </div>
+                  <div className="flex w-32 flex-col gap-1.5">
+                    <Label htmlFor="max-sentences">Max sentences</Label>
+                    <Input
+                      id="max-sentences"
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={maxSentences}
+                      onChange={(e) => setMaxSentences(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                  {(Object.keys(GUARDRAIL_LABELS) as GuardrailKey[]).map((key) => (
+                    <label key={key} className="text-ink-muted flex items-center gap-1.5 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={guardrails.includes(key)}
+                        onChange={(e) =>
+                          setGuardrails((current) =>
+                            e.target.checked ? [...current, key] : current.filter((k) => k !== key),
+                          )
+                        }
+                      />
+                      {GUARDRAIL_LABELS[key]}
+                    </label>
+                  ))}
+                </div>
+
+                {hasApiKey ? (
+                  <Button onClick={generate} disabled={generating} size="sm" variant="secondary">
+                    {generating ? <Loader2 className="animate-spin" /> : <Sparkles />}
+                    {generating ? 'Generating…' : 'Try it on this contact'}
+                  </Button>
+                ) : (
+                  <p className="text-ink-subtle text-xs">
+                    Add an Anthropic key in{' '}
+                    <Link href="/settings/ai" className="text-accent underline">
+                      Settings → AI
+                    </Link>{' '}
+                    to fill this slot. Everything else works without one.
+                  </p>
+                )}
+
+                {genError && (
+                  <p role="alert" className="text-danger text-xs">
+                    {genError}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {(check.errors.length > 0 || check.warnings.length > 0) && (
             <div className="flex flex-col gap-1.5">
@@ -407,6 +545,31 @@ export function TemplateEditor({ templateId, initial, lists }: Props) {
                     <Sparkles className="size-3" />
                     {`{{ai:${slot}}}`} fills at generation
                   </Badge>
+                ))}
+              </div>
+            )}
+
+            {Object.entries(slotFills).length > 0 && (
+              <div className="border-border flex flex-col gap-1.5 border-t p-3">
+                {Object.entries(slotFills).map(([slot, fill]) => (
+                  <div key={slot} className="flex flex-wrap items-center gap-1.5">
+                    <Badge tone="accent">
+                      <Sparkles className="size-3" />
+                      {slot}
+                    </Badge>
+                    <Badge tone={fill.cacheHit ? 'success' : 'neutral'}>
+                      {formatUsd(fill.costUsd)}
+                      {fill.cacheHit ? ' · cached prefix' : ' · cache written'}
+                    </Badge>
+                    {fill.violations.map((violation, i) => (
+                      <Badge key={i} tone={violation.severity === 'error' ? 'danger' : 'warning'}>
+                        {violation.message}
+                      </Badge>
+                    ))}
+                    {fill.violations.length === 0 && (
+                      <Badge tone="success">passed guardrails</Badge>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

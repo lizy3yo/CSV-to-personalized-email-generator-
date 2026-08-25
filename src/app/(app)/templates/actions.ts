@@ -7,6 +7,8 @@ import { db } from '@/db'
 import { auditLog, contactLists, contacts, templates } from '@/db/schema'
 import { requireUserId } from '@/lib/auth/require-user'
 import { checkTemplate } from '@/core/template/validate'
+import { describeError, generateSlot } from '@/lib/ai/client'
+import type { GuardrailKey } from '@/core/ai/prompt'
 
 /**
  * Server Actions for templates.
@@ -171,5 +173,73 @@ export async function deleteTemplate(id: string): Promise<ActionResult> {
     return { ok: true, data: undefined }
   } catch (error) {
     return fail(error)
+  }
+}
+
+// ─── AI slot generation ──────────────────────────────────────────────────────
+
+const generateSchema = z.object({
+  bodyTemplate: z.string().max(100_000),
+  slotName: z.string().min(1).max(64),
+  brief: z.string().max(2000),
+  maxSentences: z.number().int().min(0).max(10).optional(),
+  tone: z.string().max(500).optional(),
+  guardrails: z.array(z.string()).max(10).optional(),
+  data: z.record(z.string(), z.string()),
+  availableFields: z.array(z.string()).max(200),
+})
+
+export interface GeneratePreviewResult {
+  text: string
+  raw: string
+  violations: { kind: string; message: string; severity: 'error' | 'warning' }[]
+  costUsd: number
+  model: string
+  cacheHit: boolean
+}
+
+/**
+ * Fill one AI slot for one preview row.
+ *
+ * The synchronous path — the "try it on this row" button in the editor and,
+ * later, the per-row regenerate in the review screen. Bulk generation goes
+ * through the queue and the Batch API in phase 4; this is for when a human is
+ * sitting there watching.
+ */
+export async function generateSlotPreview(
+  input: z.input<typeof generateSchema>,
+): Promise<ActionResult<GeneratePreviewResult>> {
+  try {
+    const userId = await requireUserId()
+    const parsed = generateSchema.parse(input)
+
+    const result = await generateSlot({
+      userId,
+      bodyTemplate: parsed.bodyTemplate,
+      slot: {
+        name: parsed.slotName,
+        brief: parsed.brief,
+        maxSentences: parsed.maxSentences || undefined,
+      },
+      data: parsed.data,
+      availableFields: parsed.availableFields,
+      tone: parsed.tone,
+      guardrails: parsed.guardrails as GuardrailKey[] | undefined,
+    })
+
+    return {
+      ok: true,
+      data: {
+        text: result.generated.text,
+        raw: result.generated.raw,
+        violations: result.generated.violations,
+        costUsd: result.costUsd,
+        model: result.model,
+        cacheHit: result.cacheHit,
+      },
+    }
+  } catch (error) {
+    // describeError turns SDK errors into something a person can act on.
+    return { ok: false, error: describeError(error) }
   }
 }

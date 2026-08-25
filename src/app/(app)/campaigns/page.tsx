@@ -71,7 +71,7 @@ export default async function CampaignsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Build progress</CardTitle>
-              <CardDescription>Phase 2 of 9 complete.</CardDescription>
+              <CardDescription>Phase 3 of 9 complete.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {PHASES.map((phase) => {
@@ -97,7 +97,7 @@ export default async function CampaignsPage() {
   )
 }
 
-const COMPLETED_PHASE = 2
+const COMPLETED_PHASE = 3
 
 const PHASES = [
   { n: 0, label: 'Scaffold, database, Google auth, CI' },

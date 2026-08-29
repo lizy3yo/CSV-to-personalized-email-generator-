@@ -149,6 +149,28 @@ export function importableRows(result: IngestResult): IngestedRow[] {
 }
 
 /**
+ * The complement: every row that will not be imported, with its reason.
+ *
+ * These are kept so "3 of 12 rows were not imported" can be opened and read
+ * rather than merely believed. The summary counters stay authoritative — a
+ * caller may store fewer of these than the counters report (see
+ * `MAX_STORED_REJECTS`), and the two must not be conflated.
+ */
+export function rejectedRows(result: IngestResult): IngestedRow[] {
+  return result.rows.filter((row) => row.status !== 'valid')
+}
+
+/**
+ * How many rejected rows are worth keeping per list.
+ *
+ * A file that is mostly broken should not fill the database with its own
+ * wreckage — past a few hundred the answer is "fix the export", not "scroll".
+ * The counts remain exact either way, so the list page can say how many are
+ * not shown.
+ */
+export const MAX_STORED_REJECTS = 500
+
+/**
  * Merge summaries across chunks.
  *
  * A large file is ingested in slices sharing one `seen` map, so the per-chunk

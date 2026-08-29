@@ -4,7 +4,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { db } from '@/db'
-import { auditLog, contactLists, contacts, suppressions } from '@/db/schema'
+import { auditLog, contactLists, contactRejects, contacts, suppressions } from '@/db/schema'
 import { requireUserId } from '@/lib/auth/require-user'
 import { normalizeEmail } from '@/core/csv/email'
 import { LIMITS } from '@/core/csv/types'
@@ -26,6 +26,8 @@ const columnMapSchema = z.record(
   z.object({
     role: z.enum(['email', 'merge_var', 'ai_context', 'ignore']),
     variable: z.string().optional(),
+    // Position in the file. jsonb will not preserve key order for us.
+    order: z.number().int().nonnegative().optional(),
   }),
 )
 
@@ -47,6 +49,21 @@ const rowSchema = z.object({
 const appendSchema = z.object({
   listId: z.uuid(),
   rows: z.array(rowSchema).max(LIMITS.CHUNK_SIZE),
+})
+
+const rejectSchema = z.object({
+  rowNumber: z.number().int().positive(),
+  reason: z.enum(['missing_email', 'invalid_email', 'duplicate', 'suppressed']),
+  // Not validated as an email — being unusable is the whole reason it is here.
+  emailRaw: z.string().max(254),
+  issue: z.string().max(300).optional(),
+  duplicateOf: z.number().int().positive().optional(),
+  data: z.record(z.string(), z.string()),
+})
+
+const appendRejectsSchema = z.object({
+  listId: z.uuid(),
+  rows: z.array(rejectSchema).max(LIMITS.CHUNK_SIZE),
 })
 
 const finalizeSchema = z.object({
@@ -188,6 +205,49 @@ export async function appendContacts(
   }
 }
 
+/**
+ * Insert one chunk of rows that did not make it in.
+ *
+ * Idempotent the same way `appendContacts` is: the unique index on
+ * (list_id, row_number) turns a retried chunk into a no-op.
+ */
+export async function appendRejects(
+  input: z.input<typeof appendRejectsSchema>,
+): Promise<ActionResult<{ inserted: number }>> {
+  try {
+    const userId = await requireUserId()
+    const parsed = appendRejectsSchema.parse(input)
+
+    const list = await db.query.contactLists.findFirst({
+      where: and(eq(contactLists.id, parsed.listId), eq(contactLists.userId, userId)),
+    })
+    if (!list) return { ok: false, error: 'List not found' }
+
+    if (parsed.rows.length === 0) return { ok: true, data: { inserted: 0 } }
+
+    const inserted = await db
+      .insert(contactRejects)
+      .values(
+        parsed.rows.map((row) => ({
+          userId,
+          listId: parsed.listId,
+          rowNumber: row.rowNumber,
+          reason: row.reason,
+          emailRaw: row.emailRaw,
+          issue: row.issue ?? null,
+          duplicateOf: row.duplicateOf ?? null,
+          data: row.data,
+        })),
+      )
+      .onConflictDoNothing({ target: [contactRejects.listId, contactRejects.rowNumber] })
+      .returning({ id: contactRejects.id })
+
+    return { ok: true, data: { inserted: inserted.length } }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
 /** Record the final counts. Called once, after the last chunk. */
 export async function finalizeContactList(
   input: z.input<typeof finalizeSchema>,
@@ -213,7 +273,12 @@ export async function finalizeContactList(
         rowCount: parsed.summary.total,
         validCount: count,
         duplicateCount: parsed.summary.duplicate,
-        invalidCount: parsed.summary.invalidEmail + parsed.summary.missingEmail,
+        // One counter per outcome. A malformed address and a blank cell are
+        // different problems with different fixes, and the import wizard has
+        // always shown them apart — the list card should not disagree with it.
+        invalidCount: parsed.summary.invalidEmail,
+        missingCount: parsed.summary.missingEmail,
+        suppressedCount: parsed.summary.suppressed,
       })
       .where(eq(contactLists.id, parsed.listId))
 

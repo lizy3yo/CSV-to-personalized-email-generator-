@@ -46,7 +46,7 @@ test('imports a messy CSV and reports every problem', async ({ page }) => {
 
   await expect(page).toHaveURL(/\/contacts$/)
   await expect(page.getByText('2 contacts')).toBeVisible()
-  await expect(page.getByText('3 of 5 rows were not imported.')).toBeVisible()
+  await expect(page.getByText(/3 of 5 rows were not imported/)).toBeVisible()
 })
 
 test('preserves quoted commas and normalises the address', async ({ page, db, user }) => {
@@ -67,6 +67,39 @@ test('preserves quoted commas and normalises the address', async ({ page, db, us
   expect(rows[1].email_raw).toBe('B.PARK@Cascade.dev')
   // An ignored column never leaves the browser.
   expect(rows[0].data).not.toHaveProperty('internal_id')
+})
+
+test('opens an imported list and shows which rows failed, not just how many', async ({ page }) => {
+  await page.goto('/contacts/import')
+  await page.setInputFiles('input[type=file]', csvFile('messy.csv', MESSY))
+  await page.getByRole('button', { name: /^Import 2$/ }).click()
+  await expect(page).toHaveURL(/\/contacts$/)
+
+  // The card separates a malformed address from a blank cell, matching what
+  // the import wizard said a moment earlier.
+  await expect(page.getByText('1 invalid address')).toBeVisible()
+  await expect(page.getByText('1 missing address')).toBeVisible()
+
+  // The card is a link — the whole point is that the claim can be opened.
+  await page.locator('a[href^="/contacts/"]:not([href$="/import"])').first().click()
+  await expect(page).toHaveURL(/\/contacts\/[0-9a-f-]{36}$/)
+
+  await expect(page.getByRole('link', { name: 'Contacts 2' })).toBeVisible()
+  // The two rows that made it, with their data.
+  await expect(page.getByRole('cell', { name: 'a.chen@northwind.io' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'Northwind Traders, Inc.' })).toBeVisible()
+
+  // Each rejected row, with the reason attached.
+  await page.getByRole('link', { name: 'Invalid address 1' }).click()
+  await expect(page.getByRole('cell', { name: 'not-an-email' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'No @ sign' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Duplicate 1' }).click()
+  await expect(page.getByRole('cell', { name: 'Same address as row 2' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Missing address 1' }).click()
+  await expect(page.getByRole('cell', { name: 'Email cell is empty' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'empty', exact: true })).toBeVisible()
 })
 
 test('refuses a file that is not a CSV', async ({ page }) => {

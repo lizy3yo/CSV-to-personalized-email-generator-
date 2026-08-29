@@ -1,0 +1,13 @@
+Email Address,First Name,Last Name,Company,City,Role,Notes,Internal ID
+a.chen@northwind.io,Ana,Chen,"Northwind Traders, Inc.",Bristol,Head of Operations,Asked about SSO pricing in March and whether SCIM is on the roadmap,88213
+b.park@cascade.dev,Bo,Park,Cascade,Manchester,CTO,Trialled us in Q1 then went quiet - was blocked on API rate limits,88214
+d.okafor@meridian-logistics.com,Dami,Okafor,MERIDIAN LOGISTICS,Leeds,Operations Director,"Runs a fleet of 40 vans, said route planning eats three hours every morning",88215
+e.rossi@vertexhealth.it,Elena,Rossi,Vertex Health,Milan,Head of IT,"Compliance-heavy buyer, asked twice about EU data residency",88216
+f.tan@lumen.sg,,Tan,Lumen Studio,Singapore,Founder,"Solo founder, replies within the hour, prefers very short emails",88217
+g.silva@atlasfoods.com.br,Gabriel,Silva,Atlas Foods,Sao Paulo,Procurement Lead,Wants a Portuguese-language option before rolling this out to his team,88218
+h.novak@ridgeline.cz,Hana,Novak,Ridgeline,Prague,Marketing Manager,Downloaded the pricing PDF twice but never booked a call,88219
+i.moreau@gmail.com,Ines,Moreau,,Lyon,Independent consultant,"Met at the Lyon meetup, already works with three of our customers",88220
+j.wright@harborside.co.uk,Jonas,Wright,Harborside Partners,Cardiff,Partner,Sceptical about AI tooling - wants proof it will not sound robotic,88221
+A.CHEN@Northwind.IO,Ana,Chen,Northwind Traders,Bristol,Head of Operations,Same person exported twice by the CRM,88222
+k.becker(at)fjordline.no,Katrin,Becker,Fjordline,Oslo,Analyst,Typo introduced during the export,88223
+,Liam,Doyle,Kestrel,Dublin,Sales Lead,Email column was blank in the CRM record,88224

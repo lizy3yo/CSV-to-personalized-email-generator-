@@ -3,6 +3,7 @@ import {
   contextFieldsOf,
   emailColumnOf,
   importableRows,
+  rejectedRows,
   ingest,
   mergeSummaries,
   variablesOf,
@@ -167,6 +168,49 @@ describe('ingest', () => {
       columnMap: { Email: { role: 'email' } },
     })
     expect(importableRows(result).map((r) => r.email)).toEqual(['ok@x.com'])
+  })
+
+  it('rejectedRows is the exact complement of importableRows', () => {
+    const result = ingest({
+      rows: [
+        { Email: 'ok@x.com' },
+        { Email: 'bad' },
+        { Email: '' },
+        { Email: 'OK@x.com' },
+        { Email: 'blocked@x.com' },
+      ],
+      columnMap: { Email: { role: 'email' } },
+      suppressed: new Set(['blocked@x.com']),
+    })
+
+    const kept = importableRows(result)
+    const dropped = rejectedRows(result)
+
+    // Every row lands on exactly one side. A row that belonged to neither, or
+    // to both, would make the counts on the list page a lie.
+    expect(kept.length + dropped.length).toBe(result.rows.length)
+    expect(kept.map((r) => r.rowNumber)).toEqual([2])
+    expect(dropped.map((r) => r.status)).toEqual([
+      'invalid_email',
+      'missing_email',
+      'duplicate',
+      'suppressed',
+    ])
+  })
+
+  it('gives every rejected row a reason to show', () => {
+    const result = ingest({
+      rows: [{ Email: 'bad' }, { Email: '' }, { Email: 'a@x.com' }, { Email: 'A@X.com' }],
+      columnMap: { Email: { role: 'email' } },
+    })
+
+    // The list page prints `issue` verbatim; an undefined one renders blank.
+    for (const row of rejectedRows(result)) {
+      expect(row.issue, `row ${row.rowNumber} has no explanation`).toBeTruthy()
+    }
+    // A duplicate must say which row won, so the spreadsheet can be corrected.
+    const duplicate = rejectedRows(result).find((r) => r.status === 'duplicate')
+    expect(duplicate?.duplicateOf).toBe(4)
   })
 
   it('handles an empty file', () => {

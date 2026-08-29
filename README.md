@@ -9,7 +9,7 @@ and auditable.
 > review and approve, send from your own Gmail — throttled, quota-aware,
 > compliant — then see bounces, replies and rates on the report.
 
-**Setup → [SETUP.md](SETUP.md) · Deployment → [DEPLOY.md](DEPLOY.md)**
+**Setup → [SETUP.md](SETUP.md) · Try it → [DEMO.md](DEMO.md) · Deployment → [DEPLOY.md](DEPLOY.md)**
 
 ---
 

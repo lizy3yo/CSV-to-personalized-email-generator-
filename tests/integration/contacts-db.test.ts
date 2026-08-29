@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import Papa from 'papaparse'
 import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import * as schema from '@/db/schema'
-import { contactLists, contacts, profiles, suppressions } from '@/db/schema'
+import { contactLists, contactRejects, contacts, profiles, suppressions } from '@/db/schema'
 import { detectColumns } from '@/core/csv/detect'
 import { importableRows, ingest } from '@/core/csv/ingest'
 import type { ColumnMap, RawRow } from '@/core/csv/types'
@@ -231,6 +231,87 @@ describe.skipIf(!dbAvailable)('contacts persistence', () => {
 
     expect(inserted).toHaveLength(1)
     await db.delete(contactLists).where(eq(contactLists.id, other.id))
+  })
+
+  it('stores rejected rows that contacts could never hold', async () => {
+    const [rejectList] = await db
+      .insert(contactLists)
+      .values({ userId, name: 'Rejects', rowCount: 5, validCount: 1 })
+      .returning({ id: contactLists.id })
+
+    await db.insert(contactRejects).values([
+      {
+        userId,
+        listId: rejectList.id,
+        rowNumber: 3,
+        reason: 'duplicate',
+        emailRaw: 'A.CHEN@Northwind.IO',
+        issue: 'Same address as row 2',
+        duplicateOf: 2,
+        data: { first_name: 'Ana' },
+      },
+      {
+        userId,
+        listId: rejectList.id,
+        rowNumber: 4,
+        reason: 'invalid_email',
+        emailRaw: 'k.becker(at)fjordline.no',
+        issue: 'No @ sign',
+        data: { first_name: 'Katrin' },
+      },
+      // Two blank addresses in one list. This is the whole reason rejects are
+      // a separate table: `contacts` requires a non-null email and enforces
+      // uniqueness on (list_id, email), so neither of these could live there.
+      {
+        userId,
+        listId: rejectList.id,
+        rowNumber: 5,
+        reason: 'missing_email',
+        issue: 'Email cell is empty',
+      },
+      {
+        userId,
+        listId: rejectList.id,
+        rowNumber: 6,
+        reason: 'missing_email',
+        issue: 'Email cell is empty',
+      },
+    ])
+
+    const stored = await db
+      .select()
+      .from(contactRejects)
+      .where(eq(contactRejects.listId, rejectList.id))
+      .orderBy(asc(contactRejects.rowNumber))
+
+    expect(stored.map((r) => r.reason)).toEqual([
+      'duplicate',
+      'invalid_email',
+      'missing_email',
+      'missing_email',
+    ])
+    // The row that won, so the spreadsheet can actually be corrected.
+    expect(stored[0].duplicateOf).toBe(2)
+    // Kept verbatim — it is unusable, which is the point.
+    expect(stored[1].emailRaw).toBe('k.becker(at)fjordline.no')
+    expect(stored[2].emailRaw).toBe('')
+
+    // A retried chunk after a dropped connection must not double the rejects.
+    const retried = await db
+      .insert(contactRejects)
+      .values({
+        userId,
+        listId: rejectList.id,
+        rowNumber: 3,
+        reason: 'duplicate',
+        emailRaw: 'A.CHEN@Northwind.IO',
+      })
+      .onConflictDoNothing({ target: [contactRejects.listId, contactRejects.rowNumber] })
+      .returning({ id: contactRejects.id })
+    expect(retried).toHaveLength(0)
+
+    await db.delete(contactLists).where(eq(contactLists.id, rejectList.id))
+    expect(await db.$count(contactRejects, eq(contactRejects.listId, rejectList.id))).toBe(0)
   })
 
   it('cascades deletes from list to contacts', async () => {

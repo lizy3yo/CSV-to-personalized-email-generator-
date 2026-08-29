@@ -62,8 +62,13 @@ export default async function ContactsPage() {
                 return (
                   <Card key={list.id}>
                     <CardContent className="flex items-start justify-between gap-4 p-5">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{list.name}</p>
+                      {/* The whole block is the link: a row that reports "3 of 12
+                          rows were not imported" has to be openable, or the
+                          number is just a claim. */}
+                      <Link href={`/contacts/${list.id}`} className="group min-w-0 flex-1">
+                        <p className="group-hover:text-accent truncate text-sm font-medium transition-colors">
+                          {list.name}
+                        </p>
                         <p className="text-ink-muted mt-0.5 truncate text-sm">
                           {list.sourceFilename ?? 'Manual list'} ·{' '}
                           {new Date(list.createdAt).toLocaleDateString(undefined, {
@@ -79,9 +84,21 @@ export default async function ContactsPage() {
                               {list.duplicateCount.toLocaleString()} duplicate
                             </Badge>
                           )}
+                          {/* A malformed address and a blank cell are separate
+                              problems with separate fixes. */}
                           {list.invalidCount > 0 && (
                             <Badge tone="danger">
-                              {list.invalidCount.toLocaleString()} invalid
+                              {list.invalidCount.toLocaleString()} invalid address
+                            </Badge>
+                          )}
+                          {list.missingCount > 0 && (
+                            <Badge tone="danger">
+                              {list.missingCount.toLocaleString()} missing address
+                            </Badge>
+                          )}
+                          {list.suppressedCount > 0 && (
+                            <Badge tone="warning">
+                              {list.suppressedCount.toLocaleString()} suppressed
                             </Badge>
                           )}
                           <Badge tone={list.consentBasis === 'unknown' ? 'warning' : 'neutral'}>
@@ -89,12 +106,12 @@ export default async function ContactsPage() {
                           </Badge>
                         </div>
                         {rejected > 0 && (
-                          <p className="text-ink-subtle mt-2 text-xs">
+                          <p className="text-ink-subtle group-hover:text-ink-muted mt-2 text-xs transition-colors">
                             {rejected.toLocaleString()} of {list.rowCount.toLocaleString()} rows
-                            were not imported.
+                            were not imported — open to see which.
                           </p>
                         )}
-                      </div>
+                      </Link>
 
                       <DeleteListButton listId={list.id} listName={list.name} />
                     </CardContent>

@@ -84,6 +84,14 @@ export const consentBasisEnum = pgEnum('consent_basis', [
   'unknown',
 ])
 
+/** Why a CSV row was not imported. Mirrors `RowStatus` in core/csv, minus `valid`. */
+export const contactRejectReasonEnum = pgEnum('contact_reject_reason', [
+  'missing_email',
+  'invalid_email',
+  'duplicate',
+  'suppressed',
+])
+
 // ─── identity ────────────────────────────────────────────────────────────────
 
 export const profiles = pgTable('profiles', {
@@ -234,17 +242,42 @@ export const contactLists = pgTable(
       .references(() => profiles.id, { onDelete: 'cascade' }),
     name: text().notNull(),
     sourceFilename: text(),
+    /**
+     * Keyed by the spreadsheet's own header.
+     *
+     * `order` is the column's position in the file. It has to be stored
+     * explicitly because jsonb does not preserve key order — it sorts by key
+     * length, then bytewise — so without it "First Name" sorts after "Notes"
+     * and the list reads nothing like the CSV it came from.
+     */
     columnMap: jsonb()
       .$type<
-        Record<string, { role: 'email' | 'merge_var' | 'ai_context' | 'ignore'; variable?: string }>
+        Record<
+          string,
+          {
+            role: 'email' | 'merge_var' | 'ai_context' | 'ignore'
+            variable?: string
+            order?: number
+          }
+        >
       >()
       .notNull()
       .default({}),
 
+    /**
+     * One counter per outcome, so they sum to `rowCount` exactly.
+     *
+     * `invalidCount` is a malformed address only. A blank cell is a different
+     * problem with a different fix, so it gets its own counter rather than
+     * being folded in — the import wizard has always shown them apart, and the
+     * list should not quietly disagree with it.
+     */
     rowCount: integer().notNull().default(0),
     validCount: integer().notNull().default(0),
     duplicateCount: integer().notNull().default(0),
     invalidCount: integer().notNull().default(0),
+    missingCount: integer().notNull().default(0),
+    suppressedCount: integer().notNull().default(0),
 
     /** GDPR/CASL: recorded at import, because it cannot be reconstructed later. */
     consentBasis: consentBasisEnum().notNull().default('unknown'),
@@ -283,6 +316,49 @@ export const contacts = pgTable(
     uniqueIndex('contacts_list_email_uq').on(t.listId, t.email),
     index('contacts_user_idx').on(t.userId),
     index('contacts_data_gin').using('gin', t.data),
+  ],
+)
+
+/**
+ * Rows that did not make it in, kept so "3 of 12 rows were not imported" can
+ * be opened rather than merely believed.
+ *
+ * A separate table because `contacts` cannot hold them: its unique index on
+ * (list_id, email) is the very thing that rejects a duplicate, and a row with
+ * an empty email cell cannot satisfy a NOT NULL email. Forcing them in would
+ * mean weakening the constraints that make the good data trustworthy.
+ */
+export const contactRejects = pgTable(
+  'contact_rejects',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: uuid()
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    listId: uuid()
+      .notNull()
+      .references(() => contactLists.id, { onDelete: 'cascade' }),
+
+    /** Matches the line number in the user's spreadsheet, header included. */
+    rowNumber: integer().notNull(),
+    reason: contactRejectReasonEnum().notNull(),
+    /** As it appeared in the file — unusable, which is the point. */
+    emailRaw: text().notNull().default(''),
+    /** The same sentence the import wizard showed, e.g. "No @ sign". */
+    issue: text(),
+    /** For `duplicate`: the earlier row that won. */
+    duplicateOf: integer(),
+    /** The mapped columns, so the row is recognisable in the spreadsheet. */
+    data: jsonb().$type<Record<string, string>>().notNull().default({}),
+
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // A row number is unique within a list, which makes a retried chunk after
+    // a dropped connection a no-op rather than a duplicate reject.
+    uniqueIndex('contact_rejects_list_row_uq').on(t.listId, t.rowNumber),
+    index('contact_rejects_list_idx').on(t.listId),
+    index('contact_rejects_user_idx').on(t.userId),
   ],
 )
 

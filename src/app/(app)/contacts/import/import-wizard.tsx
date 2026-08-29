@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input, Label, Select } from '@/components/ui/select'
 import { detectColumns, toVariableName } from '@/core/csv/detect'
-import { importableRows, ingest } from '@/core/csv/ingest'
+import { MAX_STORED_REJECTS, importableRows, ingest, rejectedRows } from '@/core/csv/ingest'
 import { looksLikeCsvFile } from '@/core/csv/sanitize'
 import {
   AMBIGUOUS_THRESHOLD,
@@ -21,6 +21,7 @@ import {
 } from '@/core/csv/types'
 import {
   appendContacts,
+  appendRejects,
   createContactList,
   finalizeContactList,
   getSuppressedEmails,
@@ -92,7 +93,9 @@ export function ImportWizard() {
 
   const emailColumnChosen = columns.some((c) => c.role === 'email')
   const importable = useMemo(() => importableRows(result), [result])
-  const issues = useMemo(() => result.rows.filter((r) => r.status !== 'valid'), [result])
+  // The same rows the "View N issues" panel lists, and the same ones stored
+  // against the list afterwards — one definition, from core.
+  const rejected = useMemo(() => rejectedRows(result), [result])
   const ambiguous = columns.filter((c) => c.confidence < AMBIGUOUS_THRESHOLD)
 
   const handleFile = useCallback((file: File) => {
@@ -185,10 +188,19 @@ export function ImportWizard() {
     setStage('importing')
     setProgress({ done: 0, total: importable.length })
 
+    // `columns` is in file order; the stored map records that position because
+    // jsonb will not preserve key order on the way back out.
+    const orderedColumnMap = Object.fromEntries(
+      columns.map((column, index) => [
+        column.header,
+        { ...columnMap[column.header], order: index },
+      ]),
+    )
+
     const created = await createContactList({
       name: listName.trim() || filename,
       sourceFilename: filename,
-      columnMap,
+      columnMap: orderedColumnMap,
       consentBasis,
       consentSource: consentSource.trim() || undefined,
     })
@@ -219,6 +231,27 @@ export function ImportWizard() {
         done: Math.min(i + LIMITS.CHUNK_SIZE, importable.length),
         total: importable.length,
       })
+    }
+
+    // Keep a record of what did not make it, so the list page can show which
+    // rows failed and why rather than only how many.
+    //
+    // Deliberately not fatal. The contacts are already in by this point, and
+    // failing an otherwise good import because the record OF the failures
+    // could not be written would be perverse. The list page distinguishes
+    // "nothing was rejected" from "rejects were not recorded" on its own.
+    const storedRejects = rejected.slice(0, MAX_STORED_REJECTS)
+    for (let i = 0; i < storedRejects.length; i += LIMITS.CHUNK_SIZE) {
+      const chunk = storedRejects.slice(i, i + LIMITS.CHUNK_SIZE).map((row) => ({
+        rowNumber: row.rowNumber,
+        reason: row.status as 'missing_email' | 'invalid_email' | 'duplicate' | 'suppressed',
+        emailRaw: row.emailRaw,
+        issue: row.issue,
+        duplicateOf: row.duplicateOf,
+        data: row.data,
+      }))
+      const stored = await appendRejects({ listId, rows: chunk })
+      if (!stored.ok) break
     }
 
     const finalized = await finalizeContactList({ listId, summary: result.summary })
@@ -432,14 +465,14 @@ export function ImportWizard() {
             {result.summary.suppressed > 0 && (
               <Badge tone="neutral">{result.summary.suppressed.toLocaleString()} suppressed</Badge>
             )}
-            {issues.length > 0 && (
+            {rejected.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowIssues((v) => !v)}
                 className="text-accent text-xs underline underline-offset-2"
               >
-                {showIssues ? 'Hide' : 'View'} {issues.length.toLocaleString()} issue
-                {issues.length === 1 ? '' : 's'}
+                {showIssues ? 'Hide' : 'View'} {rejected.length.toLocaleString()} issue
+                {rejected.length === 1 ? '' : 's'}
               </button>
             )}
           </div>
@@ -455,7 +488,7 @@ export function ImportWizard() {
                   </tr>
                 </thead>
                 <tbody className="divide-border divide-y">
-                  {issues.slice(0, 500).map((row) => (
+                  {rejected.slice(0, MAX_STORED_REJECTS).map((row) => (
                     <tr key={row.rowNumber}>
                       <td className="text-ink-muted px-3 py-1.5 tabular-nums">{row.rowNumber}</td>
                       <td className="max-w-[16rem] truncate px-3 py-1.5">
@@ -466,9 +499,9 @@ export function ImportWizard() {
                   ))}
                 </tbody>
               </table>
-              {issues.length > 500 && (
+              {rejected.length > MAX_STORED_REJECTS && (
                 <p className="text-ink-subtle border-border border-t px-3 py-2 text-xs">
-                  Showing the first 500 of {issues.length.toLocaleString()}.
+                  Showing the first {MAX_STORED_REJECTS} of {rejected.length.toLocaleString()}.
                 </p>
               )}
             </div>
